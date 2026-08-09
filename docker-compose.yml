@@ -1,0 +1,17 @@
+services:
+  synthea:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.synthea
+    volumes:
+      - ./raw_data:/synthea/output
+    command: ["-p", "1000", "-s", "1234", "Massachusetts"]
+
+  pipeline:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    volumes:
+      - ./raw_data:/app/raw_data
+      - ./output:/app/output
+    depends_on: []

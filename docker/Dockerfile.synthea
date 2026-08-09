@@ -1,0 +1,25 @@
+# ---------------------------------------------------------------------------
+# Synthea data-generation stage
+#
+# Release notes / changelog for this version:
+#   https://github.com/synthetichealth/synthea/releases/tag/v3.3.0
+# ---------------------------------------------------------------------------
+FROM eclipse-temurin:17-jdk
+
+ARG SYNTHEA_VERSION=3.3.0
+ARG SYNTHEA_JAR_SHA256="8ba04f7d73abadd5a377e41edf24c5c83935a1cb07c6d982cd5db731ef1cf445"
+
+WORKDIR /synthea
+
+RUN curl -L -o synthea-with-dependencies.jar \
+    https://github.com/synthetichealth/synthea/releases/download/v${SYNTHEA_VERSION}/synthea-with-dependencies.jar \
+    && if [ -n "$SYNTHEA_JAR_SHA256" ]; then \
+         echo "${SYNTHEA_JAR_SHA256}  synthea-with-dependencies.jar" | sha256sum -c - ; \
+       fi
+
+COPY docker/synthea.config /synthea/synthea.config
+
+VOLUME /synthea/output
+
+ENTRYPOINT ["java", "-jar", "synthea-with-dependencies.jar", "-c", "synthea.config"]
+CMD ["-p", "1000", "-s", "1234", "Massachusetts"]
