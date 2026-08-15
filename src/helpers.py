@@ -14,7 +14,7 @@ PREPROCESSED_DATA_DIR = RUN_DIR / "01_preprocessed_data"
 
 
 def setup_pipeline():
-    """Create necessary directories and configure logging."""
+    """ Create necessary directories and configure logging """
     RUN_DIR.mkdir(parents=True, exist_ok=True)
 
     try:

@@ -12,6 +12,7 @@ MEDICATIONS_PATH = RAW_DATA_DIR / "medications.csv"
 
 T2DM_PATIENTS_OUTPUT_PATH = PREPROCESSED_DATA_DIR / "t2dm_patients.csv"
 METFORMIN_COHORT_OUTPUT_PATH = PREPROCESSED_DATA_DIR / "metformin_cohort.csv"
+NO_PRIOR_HF_COHORT_OUTPUT_PATH = PREPROCESSED_DATA_DIR / "no_prior_hf_cohort.csv"
 
 # ---------------------------------------------------------------------------
 # T2DM inclusion logic: CODE-based (SNOMED-CT)
@@ -75,6 +76,30 @@ OTHER_ANTIDIABETIC_CODES = {
  
 ANTIDIABETIC_CODES = {METFORMIN_CODE} | set(OTHER_ANTIDIABETIC_CODES.keys())
 
+# ---------------------------------------------------------------------------
+# No prior heart failure at baseline
+# EDA demonstrated that:
+#   1. Only 2 distinct heart failure related condition codes exist in this dataset,
+#      and both map 1:1 with their DESCRIPTION.
+#   2. "Chronic congestive heart failure" and "Heart failure" are treated
+#      as equally disqualifying prior heart failure evidence for this exclusion -
+#      likely a severity/staging distinction rather than two unrelated
+#      conditions, but either one means the patient cannot experience
+#      our incident heart failure hospitalization outcome as a new event.
+# ---------------------------------------------------------------------------
+HF_INCLUSION_CODES = {
+    "88805009": "Chronic congestive heart failure (disorder)",
+    "84114007": "Heart failure (disorder)",
+}
+
+
+def _strip_timezone(df: pd.DataFrame, date_columns: list) -> pd.DataFrame:
+    """ Standardize dates to timezone-naive (UTC) for internal consistency """
+    for col in date_columns:
+        if pd.api.types.is_datetime64tz_dtype(df[col]):
+            df[col] = df[col].dt.tz_localize(None)
+    return df
+
 
 def load_conditions(path: Path) -> pd.DataFrame:
     df = pd.read_csv(
@@ -82,7 +107,7 @@ def load_conditions(path: Path) -> pd.DataFrame:
         usecols=["START", "STOP", "PATIENT", "DESCRIPTION", "CODE"],
         parse_dates=["START", "STOP"],
     )
-    return df
+    return _strip_timezone(df, ["START", "STOP"])
  
  
 def load_patients(path: Path) -> pd.DataFrame:
@@ -92,7 +117,7 @@ def load_patients(path: Path) -> pd.DataFrame:
         parse_dates=["BIRTHDATE", "DEATHDATE"],
     )
     df = df.rename(columns={"Id": "patient_id"})
-    return df
+    return _strip_timezone(df, ["BIRTHDATE", "DEATHDATE"])
  
  
 def load_medications(path: Path) -> pd.DataFrame:
@@ -101,7 +126,7 @@ def load_medications(path: Path) -> pd.DataFrame:
         usecols=["START", "STOP", "PATIENT", "DESCRIPTION", "CODE"],
         parse_dates=["START", "STOP"],
     )
-    return df
+    return _strip_timezone(df, ["START", "STOP"])
 
 
 def identify_t2dm_patients(conditions: pd.DataFrame) -> pd.DataFrame:
@@ -127,11 +152,11 @@ def identify_t2dm_patients(conditions: pd.DataFrame) -> pd.DataFrame:
 def build_t2dm_cohort():
     logging.info(f"Loading conditions from {CONDITIONS_PATH} ...")
     conditions = load_conditions(CONDITIONS_PATH)
-    logging.info(f"  {len(conditions):,} total condition records loaded")
+    logging.info(f"  {len(conditions):,} condition records loaded")
 
     logging.info(f"Loading patients from {PATIENTS_PATH} ...")
     patients = load_patients(PATIENTS_PATH)
-    logging.info(f"  {len(patients):,} total patients loaded")
+    logging.info(f"  {len(patients):,} patients loaded")
     log_separator()
 
     logging.info("Identifying T2DM patients ...")
@@ -185,7 +210,8 @@ def build_metformin_cohort():
  
     logging.info(f"Loading medications from {MEDICATIONS_PATH} ...")
     medications = load_medications(MEDICATIONS_PATH)
-    logging.info(f"  {len(medications):,} total medication records loaded")
+    logging.info(f"  {len(medications):,} medication records loaded")
+    log_separator()
  
     logging.info("Identifying metformin new-users (monotherapy at treatment start) ...")
     metformin_cohort = identify_metformin_new_users(medications, t2dm_patient_ids)
@@ -193,3 +219,39 @@ def build_metformin_cohort():
  
     metformin_cohort.to_csv(METFORMIN_COHORT_OUTPUT_PATH, index=False)
     logging.info(f"Saved: {METFORMIN_COHORT_OUTPUT_PATH}")
+
+
+def identify_no_prior_hf_patients(conditions: pd.DataFrame, metformin_cohort: pd.DataFrame) -> pd.DataFrame:
+    """ Excludes any metformin-cohort patient with an heart failure diagnosis  on or before their metformin_start_date """
+    hf_conditions = conditions.loc[conditions["CODE"].astype(str).isin(HF_INCLUSION_CODES)].copy()
+ 
+    earliest_hf_date = hf_conditions.groupby("PATIENT")["START"].min().rename("hf_diagnosis_date")
+ 
+    cohort = metformin_cohort.set_index("patient_id").join(earliest_hf_date, how="left")
+ 
+    has_prior_hf = cohort["hf_diagnosis_date"].notna() & (
+        cohort["hf_diagnosis_date"] <= cohort["metformin_start_date"]
+    )
+    n_excluded = has_prior_hf.sum()
+    logging.info(f"  {n_excluded:,} metformin-cohort patients excluded: heart failure diagnosis on or before their metformin_start_date")
+ 
+    no_prior_hf_cohort = cohort.loc[~has_prior_hf].reset_index()
+    return no_prior_hf_cohort[["patient_id", "metformin_start_date"]]
+
+
+def build_no_prior_hf_cohort():
+    logging.info(f"Loading conditions from {CONDITIONS_PATH} ...")
+    conditions = load_conditions(CONDITIONS_PATH)
+    logging.info(f"  {len(conditions):,} condition records loaded")
+ 
+    logging.info(f"Loading metformin cohort from {METFORMIN_COHORT_OUTPUT_PATH} ...")
+    metformin_cohort = pd.read_csv(METFORMIN_COHORT_OUTPUT_PATH, parse_dates=["metformin_start_date"])
+    logging.info(f"  {len(metformin_cohort):,} metformin-cohort patients loaded")
+    log_separator()
+ 
+    logging.info("Identifying patients with no prior heart failure diagnosis at baseline ...")
+    no_prior_hf_cohort = identify_no_prior_hf_patients(conditions, metformin_cohort)
+    logging.info(f"  {len(no_prior_hf_cohort):,} patients qualify (no prior heart failure)")
+ 
+    no_prior_hf_cohort.to_csv(NO_PRIOR_HF_COHORT_OUTPUT_PATH, index=False)
+    logging.info(f"Saved: {NO_PRIOR_HF_COHORT_OUTPUT_PATH}")

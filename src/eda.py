@@ -1,4 +1,4 @@
-""" Exploratory analysis supporting the T2DM cohort-identification logic in preprocess_data.py. """
+""" Exploratory analysis supporting the T2DM cohort-identification logic in preprocess_data.py """
 
 import logging
 import pandas as pd
@@ -13,6 +13,7 @@ MEDICATIONS_PATH = RAW_DATA_DIR / "medications.csv"
 EXPLORATORY_DIABETES_PATTERN = "diabetes"
 BASE_DX_DESCRIPTION = "Diabetes mellitus type 2 (disorder)"
 COMPLICATION_PATTERN = "type 2 diabetes|type II diabetes"
+EXPLORATORY_HF_PATTERN = "heart failure"
 
 # Explicitly excluded:
 #   - 15777000  (Prediabetes): distinct, earlier-stage condition
@@ -40,7 +41,7 @@ def explore_diabetes_related_descriptions(conditions: pd.DataFrame) -> None:
     """
     Log every unique DESCRIPTION containing 'diabetes' (case-insensitive),
     with counts, sorted descending. This is the broad grep that revealed
-    the base-diagnosis wording mismatch and the ambiguous/ excluded categories.
+    the base-diagnosis wording mismatch and the ambiguous/ excluded categories
     """
     mask = conditions["DESCRIPTION"].str.contains(
         EXPLORATORY_DIABETES_PATTERN, case=False, na=False
@@ -61,7 +62,7 @@ def compare_base_dx_vs_complication_only(conditions: pd.DataFrame) -> None:
     Quantify the overlap between:
       - patients with the explicit base T2DM diagnosis
       - patients with any T2DM-specific complication code
-    to determine whether requiring the base diagnosis alone would wrongly exclude real T2DM patients.
+    to determine whether requiring the base diagnosis alone would wrongly exclude real T2DM patients
     """
     base_dx_patients = set(
         conditions.loc[
@@ -100,19 +101,19 @@ def log_excluded_categories(conditions: pd.DataFrame) -> None:
         )
 
 
-def check_code_vs_description_matching(conditions: pd.DataFrame) -> None:
-    """ Investigate whether SYSTEM.CODE is a more reliable identifier than free-text DESCRIPTION matching for T2DM-related conditions. """
-    logging.info("Checking CODE vs DESCRIPTION matching for diabetes-related conditions ...")
-    mask = conditions["DESCRIPTION"].str.contains(
-        EXPLORATORY_DIABETES_PATTERN, case=False, na=False
+def check_code_vs_description_matching(conditions: pd.DataFrame, pattern: str, label: str) -> None:
+    """ Investigate whether CODE is a more reliable identifier than free-text DESCRIPTION matching for T2DM-related conditions """
+    logging.info(f"Checking CODE vs DESCRIPTION matching for {label}-related conditions ...")
+    mask = conditions["DESCRIPTION"].str.contains(pattern, case=False, na=False)
+    related = conditions.loc[mask, ["CODE", "DESCRIPTION"]]
+ 
+    code_to_descriptions = related.groupby("CODE")["DESCRIPTION"].unique()
+    description_to_codes = related.groupby("DESCRIPTION")["CODE"].unique()
+ 
+    logging.info(
+        f"Checked {len(code_to_descriptions)} distinct CODEs against "
+        f"{len(description_to_codes)} distinct DESCRIPTIONs for {label}-related conditions"
     )
-    diabetes_related = conditions.loc[mask, ["CODE", "DESCRIPTION"]]
- 
-    code_to_descriptions = diabetes_related.groupby("CODE")["DESCRIPTION"].unique()
-    description_to_codes = diabetes_related.groupby("DESCRIPTION")["CODE"].unique()
- 
-    logging.info(f"Checked all {len(code_to_descriptions)} distinct CODEs "
-                 f"against all {len(description_to_codes)} distinct DESCRIPTIONs")
  
     multi_description_codes = code_to_descriptions[code_to_descriptions.apply(len) > 1]
     multi_code_descriptions = description_to_codes[description_to_codes.apply(len) > 1]
@@ -142,7 +143,7 @@ def load_medications(path: Path) -> pd.DataFrame:
 def run_eda_conditions():
     logging.info(f"Loading conditions from {CONDITIONS_PATH} ...")
     conditions = load_conditions(CONDITIONS_PATH)
-    logging.info(f"  {len(conditions):,} total condition records loaded")
+    logging.info(f"  {len(conditions):,} condition records loaded")
     log_separator()
 
     explore_diabetes_related_descriptions(conditions)
@@ -154,18 +155,18 @@ def run_eda_conditions():
     log_excluded_categories(conditions)
     log_separator()
 
-    check_code_vs_description_matching(conditions)
+    check_code_vs_description_matching(conditions, EXPLORATORY_DIABETES_PATTERN, "diabetes")
 
 
 def explore_medications_for_t2dm_cohort(t2dm_patient_ids: set) -> None:
     """ Full audit of every medication prescribed to T2DM-cohort patients """
     logging.info(f"Loading medications from  {MEDICATIONS_PATH} ...")
     medications = load_medications(MEDICATIONS_PATH)
-    logging.info(f"  {len(medications):,} total medication records loaded")
-    log_separator()
+    logging.info(f"  {len(medications):,} medication records loaded")
  
     cohort_meds = medications.loc[medications["PATIENT"].isin(t2dm_patient_ids)]
     logging.info(f"  {len(cohort_meds):,} medication records belong to T2DM-cohort patients")
+    log_separator()
  
     summary = (
         cohort_meds.groupby(["CODE", "DESCRIPTION"])
@@ -185,7 +186,7 @@ def explore_medications_for_t2dm_cohort(t2dm_patient_ids: set) -> None:
 
 
 def check_for_missed_antidiabetic_drugs(cohort_meds: pd.DataFrame) -> None:
-    """ Targeted check across ALL medications for T2DM-cohort patients, specifically searching for antidiabetic drug name patterns. """
+    """ Targeted check across ALL medications for T2DM-cohort patients, specifically searching for antidiabetic drug name patterns """
     antidiabetic_pattern = (
         "metformin|insulin|glipizide|glyburide|glimepiride|"
         "gliflozin|gliptin|glitazone|liraglutide|semaglutide|"
@@ -212,12 +213,71 @@ def check_for_missed_antidiabetic_drugs(cohort_meds: pd.DataFrame) -> None:
  
 def run_eda_medications():
     from .preprocess_data import PREPROCESSED_DATA_DIR
- 
+
     t2dm_path = PREPROCESSED_DATA_DIR / "t2dm_patients.csv"
+    logging.info(f"Loading T2DM patient IDs from {t2dm_path} ...")
     t2dm_patients = pd.read_csv(t2dm_path, usecols=["patient_id"])
     t2dm_patient_ids = set(t2dm_patients["patient_id"].unique())
-    logging.info(f"Loaded {len(t2dm_patient_ids):,} T2DM patient IDs from {t2dm_path}")
+    logging.info(f"  {len(t2dm_patient_ids):,} patients IDs loaded")
  
     cohort_meds = explore_medications_for_t2dm_cohort(t2dm_patient_ids)
     log_separator()
     check_for_missed_antidiabetic_drugs(cohort_meds)
+
+
+def explore_heart_failure_related_descriptions(conditions: pd.DataFrame) -> None:
+    """ Discovery pass for heart failure related conditions """
+    mask = conditions["DESCRIPTION"].str.contains(EXPLORATORY_HF_PATTERN, case=False, na=False)
+    matched = conditions.loc[mask]
+ 
+    summary = (
+        matched.groupby(["CODE", "DESCRIPTION"])
+        .agg(n_records=("PATIENT", "size"), n_patients=("PATIENT", "nunique"))
+        .reset_index()
+        .sort_values("n_records", ascending=False)
+    )
+ 
+    logging.info("All CODE/DESCRIPTION values containing 'heart failure':")
+    for _, row in summary.iterrows():
+        logging.info(
+            f"  CODE {row['CODE']}: {row['DESCRIPTION']} "
+            f"- {row['n_records']:,} records, {row['n_patients']:,} unique patients"
+        )
+ 
+ 
+def compare_hf_patients_vs_metformin_cohort(conditions: pd.DataFrame, metformin_patient_ids: set) -> None:
+    """ How many heart failure patients exist dataset-wide, and how many of those are also in the metformin cohort """
+    from .preprocess_data import HF_INCLUSION_CODES
+ 
+    hf_conditions = conditions.loc[conditions["CODE"].astype(str).isin(HF_INCLUSION_CODES)]
+    hf_patient_ids = set(hf_conditions["PATIENT"].unique())
+ 
+    logging.info(f"  {len(hf_conditions):,} heart failure condition records found, representing {len(hf_patient_ids):,} unique patients (dataset-wide)")
+ 
+    overlap = hf_patient_ids & metformin_patient_ids
+    logging.info(
+        f"  {len(overlap):,} of those {len(hf_patient_ids):,} heart failure patients "
+        f"are also in the {len(metformin_patient_ids):,} patient metformin cohort"
+    )
+ 
+ 
+def run_eda_heart_failure():
+    """ EDA supporting the "no prior heart failure at baseline" cohort exclusion step """
+    from .preprocess_data import METFORMIN_COHORT_OUTPUT_PATH
+ 
+    logging.info("Loading conditions for heart failure EDA ...")
+    conditions = load_conditions(CONDITIONS_PATH)
+    logging.info(f"  {len(conditions):,} condition records loaded")
+    log_separator()
+ 
+    explore_heart_failure_related_descriptions(conditions)
+    log_separator()
+    check_code_vs_description_matching(conditions, EXPLORATORY_HF_PATTERN, "heart failure")
+    log_separator()
+
+    logging.info(f"Loading metformin-cohort patient IDs from {METFORMIN_COHORT_OUTPUT_PATH} ...")
+    metformin_cohort = pd.read_csv(METFORMIN_COHORT_OUTPUT_PATH, usecols=["patient_id"])
+    metformin_patient_ids = set(metformin_cohort["patient_id"].unique())
+    logging.info(f"  {len(metformin_patient_ids):,} metformin-cohort patient IDs loaded")
+ 
+    compare_hf_patients_vs_metformin_cohort(conditions, metformin_patient_ids)
