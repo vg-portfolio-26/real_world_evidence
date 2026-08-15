@@ -8,6 +8,7 @@ from .helpers import log_separator
 
 RAW_DATA_DIR = Path("raw_data/csv")
 CONDITIONS_PATH = RAW_DATA_DIR / "conditions.csv"
+MEDICATIONS_PATH = RAW_DATA_DIR / "medications.csv"
 
 EXPLORATORY_DIABETES_PATTERN = "diabetes"
 BASE_DX_DESCRIPTION = "Diabetes mellitus type 2 (disorder)"
@@ -111,7 +112,7 @@ def check_code_vs_description_matching(conditions: pd.DataFrame) -> None:
     description_to_codes = diabetes_related.groupby("DESCRIPTION")["CODE"].unique()
  
     logging.info(f"Checked all {len(code_to_descriptions)} distinct CODEs "
-                 f"against all {len(description_to_codes)} distinct DESCRIPTIONs for diabetes-related conditions")
+                 f"against all {len(description_to_codes)} distinct DESCRIPTIONs")
  
     multi_description_codes = code_to_descriptions[code_to_descriptions.apply(len) > 1]
     multi_code_descriptions = description_to_codes[description_to_codes.apply(len) > 1]
@@ -127,9 +128,18 @@ def check_code_vs_description_matching(conditions: pd.DataFrame) -> None:
             logging.info("WARNING: DESCRIPTION values mapped to more than one CODE:")
             for description, codes in multi_code_descriptions.items():
                 logging.info(f"  '{description}': CODEs {list(codes)}")
- 
 
-def run_eda():
+
+def load_medications(path: Path) -> pd.DataFrame:
+    df = pd.read_csv(
+        path,
+        usecols=["START", "STOP", "PATIENT", "DESCRIPTION", "CODE"],
+        parse_dates=["START", "STOP"],
+    )
+    return df
+
+
+def run_eda_conditions():
     logging.info(f"Loading conditions from {CONDITIONS_PATH} ...")
     conditions = load_conditions(CONDITIONS_PATH)
     logging.info(f"  {len(conditions):,} total condition records loaded")
@@ -145,4 +155,69 @@ def run_eda():
     log_separator()
 
     check_code_vs_description_matching(conditions)
+
+
+def explore_medications_for_t2dm_cohort(t2dm_patient_ids: set) -> None:
+    """ Full audit of every medication prescribed to T2DM-cohort patients """
+    logging.info(f"Loading medications from  {MEDICATIONS_PATH} ...")
+    medications = load_medications(MEDICATIONS_PATH)
+    logging.info(f"  {len(medications):,} total medication records loaded")
     log_separator()
+ 
+    cohort_meds = medications.loc[medications["PATIENT"].isin(t2dm_patient_ids)]
+    logging.info(f"  {len(cohort_meds):,} medication records belong to T2DM-cohort patients")
+ 
+    summary = (
+        cohort_meds.groupby(["CODE", "DESCRIPTION"])
+        .agg(n_records=("PATIENT", "size"), n_patients=("PATIENT", "nunique"))
+        .reset_index()
+        .sort_values("n_patients", ascending=False)
+    )
+ 
+    logging.info(f"Top 10 medications by unique-patient count within the T2DM cohort (all {len(summary)} distinct drugs):")
+    for _, row in summary.head(10).iterrows():
+        logging.info(
+            f"  CODE {row['CODE']}: {row['DESCRIPTION']} "
+            f"- {row['n_patients']:,} patients, {row['n_records']:,} records"
+        )
+
+    return cohort_meds
+
+
+def check_for_missed_antidiabetic_drugs(cohort_meds: pd.DataFrame) -> None:
+    """ Targeted check across ALL medications for T2DM-cohort patients, specifically searching for antidiabetic drug name patterns. """
+    antidiabetic_pattern = (
+        "metformin|insulin|glipizide|glyburide|glimepiride|"
+        "gliflozin|gliptin|glitazone|liraglutide|semaglutide|"
+        "exenatide|dulaglutide|glargine|detemir|degludec"
+    )
+    mask = cohort_meds["DESCRIPTION"].str.contains(antidiabetic_pattern, case=False, na=False)
+    matched = cohort_meds.loc[mask]
+ 
+    summary = (
+        matched.groupby(["CODE", "DESCRIPTION"])
+        .agg(n_records=("PATIENT", "size"), n_patients=("PATIENT", "nunique"))
+        .reset_index()
+        .sort_values("n_patients", ascending=False)
+    )
+ 
+    logging.info(f"Antidiabetic-pattern check across ALL {len(cohort_meds):,} T2DM-cohort medication records:")
+    logging.info(f"  {len(summary)} distinct drugs matched:")
+    for _, row in summary.iterrows():
+        logging.info(
+            f"  CODE {row['CODE']}: {row['DESCRIPTION']} "
+            f"- {row['n_patients']:,} patients, {row['n_records']:,} records"
+        )
+
+ 
+def run_eda_medications():
+    from .preprocess_data import PREPROCESSED_DATA_DIR
+ 
+    t2dm_path = PREPROCESSED_DATA_DIR / "t2dm_patients.csv"
+    t2dm_patients = pd.read_csv(t2dm_path, usecols=["patient_id"])
+    t2dm_patient_ids = set(t2dm_patients["patient_id"].unique())
+    logging.info(f"Loaded {len(t2dm_patient_ids):,} T2DM patient IDs from {t2dm_path}")
+ 
+    cohort_meds = explore_medications_for_t2dm_cohort(t2dm_patient_ids)
+    log_separator()
+    check_for_missed_antidiabetic_drugs(cohort_meds)

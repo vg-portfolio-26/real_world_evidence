@@ -10,6 +10,8 @@ RUN_DIR = OUTPUT_DIR / RUN_TIMESTAMP
 
 LOG_FILE = RUN_DIR / "pipeline.log"
 
+PREPROCESSED_DATA_DIR = RUN_DIR / "01_preprocessed_data"
+
 
 def setup_pipeline():
     """Create necessary directories and configure logging."""
@@ -32,6 +34,10 @@ def setup_pipeline():
 
     logging.info(f"Logging initialized. Run folder: {RUN_DIR}")
     logging.info(f"Writing log to: {LOG_FILE}")
+
+    for d in (PREPROCESSED_DATA_DIR,):
+        d.mkdir(parents=True, exist_ok=True)
+        logging.info("Needed output directories created")
 
 
 def log_separator(title=None):
