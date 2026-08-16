@@ -12,7 +12,8 @@ MEDICATIONS_PATH = RAW_DATA_DIR / "medications.csv"
 
 T2DM_PATIENTS_OUTPUT_PATH = PREPROCESSED_DATA_DIR / "t2dm_patients.csv"
 METFORMIN_COHORT_OUTPUT_PATH = PREPROCESSED_DATA_DIR / "metformin_cohort.csv"
-NO_PRIOR_HF_COHORT_OUTPUT_PATH = PREPROCESSED_DATA_DIR / "no_prior_hf_cohort.csv"
+NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH = PREPROCESSED_DATA_DIR / "no_prior_hf_metformin_cohort.csv"
+BASELINE_COVARIATES_OUTPUT_PATH = PREPROCESSED_DATA_DIR / "baseline_covariates.csv"
 
 # ---------------------------------------------------------------------------
 # T2DM inclusion logic: CODE-based (SNOMED-CT)
@@ -87,10 +88,50 @@ ANTIDIABETIC_CODES = {METFORMIN_CODE} | set(OTHER_ANTIDIABETIC_CODES.keys())
 #      conditions, but either one means the patient cannot experience
 #      our incident heart failure hospitalization outcome as a new event.
 # ---------------------------------------------------------------------------
+
 HF_INCLUSION_CODES = {
     "88805009": "Chronic congestive heart failure (disorder)",
     "84114007": "Heart failure (disorder)",
 }
+
+# ---------------------------------------------------------------------------
+# Baseline covariates
+# EDA demonstrated that:
+#   1. BMI, HbA1c, systolic BP, and diastolic BP each map 1:1 to a single
+#      CODE/DESCRIPTION/UNITS combination - full coverage across all
+#      3,964 cohort patients, no issues.
+#   2. eGFR (CODE 33914-3) and creatinine (CODE 38483-4) each have
+#      multiple DESCRIPTION/UNITS variants under the same CODE, and
+#      their VALUE distributions genuinely differ between variants - 
+#      the minority variants show implausible or systematically different values. 
+#      Since the majority variant alone already covers 100% of the cohort, we use
+#      only that variant for each and discard the rest, rather than
+#      attempting to reconcile inconsistent data.
+#   3. most patients' labs are recorded shortly after metformin start, not before - 
+#      a timing artifact of Synthea's simulated encounter ordering, not missing data
+#
+# Baseline definition: each patient's most recent value not later than 40 days after their metformin_start_date
+# ---------------------------------------------------------------------------
+
+COVARIATE_OBSERVATION_CODES = {
+    "39156-5": "bmi",
+    "4548-4": "hba1c",
+    "8480-6": "systolic_bp",
+    "8462-4": "diastolic_bp",
+    "33914-3": "egfr",
+    "38483-4": "creatinine",
+}
+
+CANONICAL_VARIANT_FILTER = {
+    "33914-3": (
+        "Glomerular filtration rate/1.73 sq M.predicted [Volume Rate/Area] "
+        "in Serum or Plasma by Creatinine-based formula (MDRD)",
+        "mL/min/{1.73_m2}",
+    ),
+    "38483-4": ("Creatinine [Mass/volume] in Blood", "mg/dL"),
+}
+
+BASELINE_WINDOW_DAYS_AFTER_INDEX = 40
 
 
 def _strip_timezone(df: pd.DataFrame, date_columns: list) -> pd.DataFrame:
@@ -127,6 +168,29 @@ def load_medications(path: Path) -> pd.DataFrame:
         parse_dates=["START", "STOP"],
     )
     return _strip_timezone(df, ["START", "STOP"])
+
+
+def load_baseline_observations(path: Path, patient_ids: set, chunksize: int = 1_000_000) -> pd.DataFrame:
+    """ Reads in chunks, filtering each chunk to only our cohort's patients and only the 6 covariate CODEs needed due to memory constraints """
+    matched_chunks = []
+    total_rows_seen = 0
+ 
+    for chunk in pd.read_csv(
+        path,
+        usecols=["DATE", "PATIENT", "CODE", "DESCRIPTION", "VALUE", "UNITS"],
+        parse_dates=["DATE"],
+        chunksize=chunksize,
+    ):
+        total_rows_seen += len(chunk)
+        relevant = chunk.loc[
+            chunk["PATIENT"].isin(patient_ids)
+            & chunk["CODE"].isin(COVARIATE_OBSERVATION_CODES)
+        ]
+        matched_chunks.append(relevant)
+ 
+    logging.info(f"  Scanned {total_rows_seen:,} total observation rows across all patients")
+    observations = pd.concat(matched_chunks, ignore_index=True)
+    return _strip_timezone(observations, ["DATE"])
 
 
 def identify_t2dm_patients(conditions: pd.DataFrame) -> pd.DataFrame:
@@ -192,10 +256,7 @@ def identify_metformin_new_users(medications: pd.DataFrame, t2dm_patient_ids: se
         | (cohort["metformin_start_date"] <= cohort["other_antidiabetic_start_date"])
     )
     n_excluded = (~is_new_user).sum()
-    logging.info(
-        f"  {n_excluded:,} patients excluded: had another antidiabetic drug "
-        f"before their first metformin record (metformin was not their first-line agent)"
-    )
+    logging.info(f"  {n_excluded:,} patients excluded: had another antidiabetic drug before their first metformin record")
  
     metformin_cohort = cohort.loc[is_new_user].reset_index().rename(columns={"PATIENT": "patient_id"})
 
@@ -222,7 +283,7 @@ def build_metformin_cohort():
 
 
 def identify_no_prior_hf_patients(conditions: pd.DataFrame, metformin_cohort: pd.DataFrame) -> pd.DataFrame:
-    """ Excludes any metformin-cohort patient with an heart failure diagnosis  on or before their metformin_start_date """
+    """ Excludes any metformin-cohort patient with an heart failure diagnosis on or before their metformin_start_date """
     hf_conditions = conditions.loc[conditions["CODE"].astype(str).isin(HF_INCLUSION_CODES)].copy()
  
     earliest_hf_date = hf_conditions.groupby("PATIENT")["START"].min().rename("hf_diagnosis_date")
@@ -236,6 +297,7 @@ def identify_no_prior_hf_patients(conditions: pd.DataFrame, metformin_cohort: pd
     logging.info(f"  {n_excluded:,} metformin-cohort patients excluded: heart failure diagnosis on or before their metformin_start_date")
  
     no_prior_hf_cohort = cohort.loc[~has_prior_hf].reset_index()
+
     return no_prior_hf_cohort[["patient_id", "metformin_start_date"]]
 
 
@@ -253,5 +315,73 @@ def build_no_prior_hf_cohort():
     no_prior_hf_cohort = identify_no_prior_hf_patients(conditions, metformin_cohort)
     logging.info(f"  {len(no_prior_hf_cohort):,} patients qualify (no prior heart failure)")
  
-    no_prior_hf_cohort.to_csv(NO_PRIOR_HF_COHORT_OUTPUT_PATH, index=False)
-    logging.info(f"Saved: {NO_PRIOR_HF_COHORT_OUTPUT_PATH}")
+    no_prior_hf_cohort.to_csv(NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH, index=False)
+    logging.info(f"Saved: {NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH}")
+ 
+ 
+def extract_baseline_covariates(observations: pd.DataFrame, cohort: pd.DataFrame) -> pd.DataFrame:
+    """ For each patient and each covariate CODE, take the value closest to that patient's metformin_start_date, among observations within the baseline window """
+    for code, (description, units) in CANONICAL_VARIANT_FILTER.items():
+        bad_variant_mask = (
+            (observations["CODE"] == code)
+            & ~((observations["DESCRIPTION"] == description) & (observations["UNITS"] == units))
+        )
+        n_dropped = bad_variant_mask.sum()
+        if n_dropped > 0:
+            logging.info(f"  Dropping {n_dropped:,} non-canonical-variant records for CODE {code}")
+        observations = observations.loc[~bad_variant_mask]
+ 
+    observations = observations.merge(
+        cohort[["patient_id", "metformin_start_date"]],
+        left_on="PATIENT", right_on="patient_id", how="inner",
+    )
+ 
+    observations["VALUE"] = pd.to_numeric(observations["VALUE"], errors="coerce")
+ 
+    window_upper_bound = observations["metformin_start_date"] + pd.Timedelta(days=BASELINE_WINDOW_DAYS_AFTER_INDEX)
+    baseline_eligible = observations.loc[observations["DATE"] <= window_upper_bound].copy()
+ 
+    baseline_eligible["days_from_index"] = (
+        baseline_eligible["DATE"] - baseline_eligible["metformin_start_date"]
+    ).dt.total_seconds() / 86400
+    baseline_eligible["abs_days_from_index"] = baseline_eligible["days_from_index"].abs()
+ 
+    baseline_eligible = baseline_eligible.sort_values("abs_days_from_index")
+    closest_per_patient_code = (
+        baseline_eligible.groupby(["patient_id", "CODE"], as_index=False)
+        .first()[["patient_id", "CODE", "VALUE"]]
+    )
+ 
+    # Pivot to one row per patient, one column per covariate
+    wide = closest_per_patient_code.pivot(index="patient_id", columns="CODE", values="VALUE")
+    wide = wide.rename(columns=COVARIATE_OBSERVATION_CODES).reset_index()
+ 
+    for code, name in COVARIATE_OBSERVATION_CODES.items():
+        if name not in wide.columns:
+            wide[name] = pd.NA
+        n_missing = wide[name].isna().sum()
+        logging.info(f"  {name} (CODE {code}): {len(wide) - n_missing:,} patients have a baseline value, {n_missing:,} missing")
+ 
+    return wide
+
+
+def build_baseline_covariates():
+    logging.info(f"Baseline window: DATE <= metformin_start_date + {BASELINE_WINDOW_DAYS_AFTER_INDEX} days")
+    logging.info(f"Loading no-prior-heart-failure cohort from {NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH} ...")
+    cohort = pd.read_csv(NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH, parse_dates=["metformin_start_date"])
+    cohort = _strip_timezone(cohort, ["metformin_start_date"])
+    patient_ids = set(cohort["patient_id"].unique())
+    logging.info(f"  {len(patient_ids):,} cohort patients loaded")
+ 
+    logging.info(f"Loading observations from {RAW_DATA_DIR / 'observations.csv'} ...")
+    observations = load_baseline_observations(RAW_DATA_DIR / "observations.csv", patient_ids)
+    logging.info(f"  {len(observations):,} observation records loaded")
+    log_separator()
+ 
+    logging.info("Extracting baseline covariates ...")
+    covariates = extract_baseline_covariates(observations, cohort)
+ 
+    result = cohort.merge(covariates, on="patient_id", how="left")
+ 
+    result.to_csv(BASELINE_COVARIATES_OUTPUT_PATH, index=False)
+    logging.info(f"Saved: {BASELINE_COVARIATES_OUTPUT_PATH}")

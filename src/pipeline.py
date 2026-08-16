@@ -1,6 +1,6 @@
 from .helpers import setup_pipeline, log_separator
-from .eda import run_eda_conditions, run_eda_medications, run_eda_heart_failure
-from .preprocess_data import build_t2dm_cohort, build_metformin_cohort, build_no_prior_hf_cohort
+from .eda import run_eda_conditions, run_eda_medications, run_eda_heart_failure, run_eda_observations
+from .preprocess_data import build_t2dm_cohort, build_metformin_cohort, build_no_prior_hf_cohort, build_baseline_covariates
 
 
 def main():
@@ -25,6 +25,12 @@ def main():
 
     log_separator("Preprocessing: excluding patients with prior heart failure")
     build_no_prior_hf_cohort()
+
+    log_separator("EDA: Baseline covariate observations reasoning")
+    run_eda_observations()
+
+    log_separator("Preprocessing: extracting baseline covariates")
+    build_baseline_covariates()
 
     log_separator("Pipeline finished")
 
