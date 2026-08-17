@@ -14,6 +14,7 @@ T2DM_PATIENTS_OUTPUT_PATH = PREPROCESSED_DATA_DIR / "t2dm_patients.csv"
 METFORMIN_COHORT_OUTPUT_PATH = PREPROCESSED_DATA_DIR / "metformin_cohort.csv"
 NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH = PREPROCESSED_DATA_DIR / "no_prior_hf_metformin_cohort.csv"
 BASELINE_COVARIATES_OUTPUT_PATH = PREPROCESSED_DATA_DIR / "baseline_covariates.csv"
+COMPLETE_CASE_COHORT_OUTPUT_PATH = PREPROCESSED_DATA_DIR / "complete_case_cohort.csv"
 
 # ---------------------------------------------------------------------------
 # T2DM inclusion logic: CODE-based (SNOMED-CT)
@@ -109,6 +110,13 @@ HF_INCLUSION_CODES = {
 #      attempting to reconcile inconsistent data.
 #   3. most patients' labs are recorded shortly after metformin start, not before - 
 #      a timing artifact of Synthea's simulated encounter ordering, not missing data
+#   4. eGFR and creatinine have long, implausible tails even within their single canonical variant.
+#      Values outside the chosen plausible ranges are set to MISSING (NaN).
+#   5. eGFR has 655 implausible  records tightly clustered at 1.0-1.9, and all 655
+#      would fall within the plausible range if multiplied by 100.
+#      Confirmed via LOINC/FHIR documentation that CODE 33914-3 has no
+#      legitimate alternate scale/unit convention (defined as mL/min/1.73m2).
+#      Values will be corrected rather than discarded.
 #
 # Baseline definition: each patient's most recent value not later than 40 days after their metformin_start_date
 # ---------------------------------------------------------------------------
@@ -132,6 +140,19 @@ CANONICAL_VARIANT_FILTER = {
 }
 
 BASELINE_WINDOW_DAYS_AFTER_INDEX = 40
+
+PLAUSIBLE_RANGES = {
+    "bmi": (10, 80),
+    "hba1c": (3, 20),
+    "systolic_bp": (60, 250),
+    "diastolic_bp": (30, 150),
+    "egfr": (2, 200),
+    "creatinine": (0.1, 15),
+}
+
+SCALE_CORRECTION_CODES = {
+    "33914-3": 100,  # egfr
+}
 
 
 def _strip_timezone(df: pd.DataFrame, date_columns: list) -> pd.DataFrame:
@@ -337,6 +358,39 @@ def extract_baseline_covariates(observations: pd.DataFrame, cohort: pd.DataFrame
     )
  
     observations["VALUE"] = pd.to_numeric(observations["VALUE"], errors="coerce")
+
+    # Apply scale correction 
+    for code, factor in SCALE_CORRECTION_CODES.items():
+        code_mask = observations["CODE"] == code
+        name = COVARIATE_OBSERVATION_CODES[code]
+        low, high = PLAUSIBLE_RANGES[name]
+ 
+        # Only rescale values that are implausible on their original scale and would become plausible after correction
+        originally_implausible = code_mask & ~observations["VALUE"].between(low, high)
+        would_become_plausible = (observations["VALUE"] * factor).between(low, high)
+        to_correct = originally_implausible & would_become_plausible
+ 
+        n_corrected = to_correct.sum()
+        if n_corrected > 0:
+            logging.info(
+                f"  {name} (CODE {code}): {n_corrected:,} records rescaled "
+                f"(x{factor}) - confirmed generation-artifact scale mix-up, not discarded"
+            )
+            observations.loc[to_correct, "VALUE"] = observations.loc[to_correct, "VALUE"] * factor
+
+    # Drop implausible covariate values
+    covariate_names_by_code = COVARIATE_OBSERVATION_CODES
+    for code, name in covariate_names_by_code.items():
+        low, high = PLAUSIBLE_RANGES[name]
+        code_mask = observations["CODE"] == code
+        implausible_mask = code_mask & ~observations["VALUE"].between(low, high)
+        n_implausible = implausible_mask.sum()
+        if n_implausible > 0:
+            logging.info(
+                f"  {name} (CODE {code}): {n_implausible:,} observation records outside "
+                f"plausible range [{low}, {high}] treated as missing"
+            )
+        observations = observations.loc[~implausible_mask]
  
     window_upper_bound = observations["metformin_start_date"] + pd.Timedelta(days=BASELINE_WINDOW_DAYS_AFTER_INDEX)
     baseline_eligible = observations.loc[observations["DATE"] <= window_upper_bound].copy()
@@ -385,3 +439,34 @@ def build_baseline_covariates():
  
     result.to_csv(BASELINE_COVARIATES_OUTPUT_PATH, index=False)
     logging.info(f"Saved: {BASELINE_COVARIATES_OUTPUT_PATH}")
+
+
+def build_complete_case_cohort():
+    """ Filters baseline_covariates.csv down to complete cases, and attaches sex, race, age at metformin_start_date """
+    logging.info(f"Loading baseline covariates from {BASELINE_COVARIATES_OUTPUT_PATH} ...")
+    covariates = pd.read_csv(BASELINE_COVARIATES_OUTPUT_PATH, parse_dates=["metformin_start_date"])
+    covariates = _strip_timezone(covariates, ["metformin_start_date"])
+    logging.info(f"  {len(covariates):,} cohort patients loaded")
+ 
+    logging.info(f"Loading patients from {PATIENTS_PATH} ...")
+    patients = load_patients(PATIENTS_PATH)
+    patients = patients[["patient_id", "BIRTHDATE", "GENDER", "RACE"]]
+    logging.info(f"  {len(patients):,} patients loaded")
+
+    log_separator()
+    logging.info("Building complete-case cohort ...")
+    merged = covariates.merge(patients, on="patient_id", how="left")
+    merged["age"] = (merged["metformin_start_date"] - merged["BIRTHDATE"]).dt.days / 365.25
+ 
+    covariate_columns = list(COVARIATE_OBSERVATION_CODES.values())
+    complete_case = merged.dropna(subset=covariate_columns).copy()
+    logging.info(
+        f"  Complete-case cohort (all {len(covariate_columns)} covariates present): "
+        f"{len(complete_case):,}/{len(merged):,} patients"
+    )
+ 
+    output_columns = ["patient_id", "metformin_start_date", "age", "GENDER", "RACE"] + covariate_columns
+    complete_case = complete_case[output_columns]
+ 
+    complete_case.to_csv(COMPLETE_CASE_COHORT_OUTPUT_PATH, index=False)
+    logging.info(f"Saved: {COMPLETE_CASE_COHORT_OUTPUT_PATH}")

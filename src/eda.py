@@ -10,6 +10,7 @@ RAW_DATA_DIR = Path("raw_data/csv")
 CONDITIONS_PATH = RAW_DATA_DIR / "conditions.csv"
 MEDICATIONS_PATH = RAW_DATA_DIR / "medications.csv"
 OBSERVATIONS_PATH = RAW_DATA_DIR / "observations.csv"
+PATIENTS_PATH = RAW_DATA_DIR / "patients.csv"
 
 EXPLORATORY_DIABETES_PATTERN = "diabetes"
 BASE_DX_DESCRIPTION = "Diabetes mellitus type 2 (disorder)"
@@ -421,11 +422,8 @@ def check_value_distributions_for_duplicate_codes(cohort_obs: pd.DataFrame, code
 def analyze_nearest_observation_distance_distribution(cohort_obs: pd.DataFrame, codes: dict) -> None:
     """
     Computes, for all cohort patients, the distance in days to their nearest observation and logs:
-      - a percentile breakdown, revealing the "elbow" where
-        a same-visit cluster (near 0 days) ends and a much later cluster
-        (e.g. annual-checkup cadence) begins
-      - a single summary line showing how many patients the currently
-        configured window (preprocess_data.py's BASELINE_WINDOW_DAYS_AFTER_INDEX)
+      - a percentile breakdown, revealing the "elbow" where a same-visit cluster ends and a much later cluster begins
+      - a single summary line showing how many patients the currently configured window captures
     """
     from .preprocess_data import NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH, BASELINE_WINDOW_DAYS_AFTER_INDEX
  
@@ -455,9 +453,44 @@ def analyze_nearest_observation_distance_distribution(cohort_obs: pd.DataFrame, 
         n_within_window = (code_obs.loc[code_obs["days_from_index"] <= window_upper, "patient_id"].nunique())
         logging.info(f"  CODE {code} ({label}): {formatted}  |  within current window: {n_within_window:,}/{n_cohort:,}")
 
+
+def analyze_implausible_values(cohort_obs: pd.DataFrame, code: str, label: str) -> None:
+    """ Logs the distribution of the implausible values """
+    from .preprocess_data import PLAUSIBLE_RANGES
+ 
+    low, high = PLAUSIBLE_RANGES[label]
+ 
+    code_obs = cohort_obs.loc[cohort_obs["CODE"] == code].copy()
+    code_obs["VALUE"] = pd.to_numeric(code_obs["VALUE"], errors="coerce")
+ 
+    implausible = code_obs.loc[~code_obs["VALUE"].between(low, high)]
+    logging.info(
+        f"Investigating {len(implausible):,} implausible {label} (CODE {code}) values "
+        f"(plausible range: [{low}, {high}]):"
+    )
+ 
+    if len(implausible) == 0:
+        logging.info("  No implausible values found.")
+        return
+ 
+    stats = implausible["VALUE"].describe()
+    logging.info(
+        f"  Value distribution: mean={stats['mean']:.3f}, std={stats['std']:.3f}, "
+        f"min={stats['min']:.3f}, 25%={stats['25%']:.3f}, median={stats['50%']:.3f}, "
+        f"75%={stats['75%']:.3f}, max={stats['max']:.3f}"
+    )
+ 
+    # Check specifically for a scale/unit mix-up
+    scale_shifted = implausible["VALUE"] * 100
+    n_recoverable_by_scaling = scale_shifted.between(low, high).sum()
+    logging.info(
+        f"  Of these, {n_recoverable_by_scaling:,} would fall within the plausible "
+        f"range if multiplied by 100 - {'suggests a fraction/percentage scale mix-up, worth fixing rather than discarding' if n_recoverable_by_scaling > len(implausible) * 0.5 else 'does not look like a dominant pattern, likely genuine noise'}"
+    )
+
  
 def run_eda_observations():
-    from .preprocess_data import NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH
+    from .preprocess_data import NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH, COVARIATE_OBSERVATION_CODES
  
     logging.info(f"Loading no-prior-heart-failure-cohort patient IDs from {NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH} ...")
     cohort = pd.read_csv(NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH, usecols=["patient_id"])
@@ -490,3 +523,44 @@ def run_eda_observations():
 
     log_separator()
     analyze_nearest_observation_distance_distribution(cohort_obs, TARGET_COVARIATE_CODES)
+
+    log_separator()
+    for code, label in COVARIATE_OBSERVATION_CODES.items():
+        analyze_implausible_values(cohort_obs, code, label)
+
+
+def describe_complete_case_cohort_for_injection_calibration():
+    """ Descriptive pass over the complete-case cohort """
+    from .preprocess_data import BASELINE_COVARIATES_OUTPUT_PATH, COVARIATE_OBSERVATION_CODES
+ 
+    logging.info(f"Loading baseline covariates from {BASELINE_COVARIATES_OUTPUT_PATH} ...")
+    covariates = pd.read_csv(BASELINE_COVARIATES_OUTPUT_PATH, parse_dates=["metformin_start_date"])
+    if pd.api.types.is_datetime64tz_dtype(covariates["metformin_start_date"]):
+        covariates["metformin_start_date"] = covariates["metformin_start_date"].dt.tz_localize(None)
+    logging.info(f"  {len(covariates):,} cohort patients loaded")
+ 
+    logging.info(f"Loading patients from {PATIENTS_PATH} ...")
+    patients = pd.read_csv(PATIENTS_PATH, usecols=["Id", "BIRTHDATE"], parse_dates=["BIRTHDATE"])
+    patients = patients.rename(columns={"Id": "patient_id"})
+    if pd.api.types.is_datetime64tz_dtype(patients["BIRTHDATE"]):
+        patients["BIRTHDATE"] = patients["BIRTHDATE"].dt.tz_localize(None)
+    
+    merged = covariates.merge(patients, on="patient_id", how="left")
+    merged["age"] = (merged["metformin_start_date"] - merged["BIRTHDATE"]).dt.days / 365.25
+ 
+    covariate_columns = list(COVARIATE_OBSERVATION_CODES.values())
+    complete_case = merged.dropna(subset=covariate_columns)
+    logging.info(
+        f"  Complete-case cohort (all {len(covariate_columns)} covariates present): "
+        f"{len(complete_case):,}/{len(merged):,} patients"
+    )
+    
+    log_separator()
+    logging.info("Descriptive statistics for complete-case cohort:")
+    for column in ["age"] + covariate_columns:
+        stats = complete_case[column].describe()
+        logging.info(
+            f"  {column}: mean={stats['mean']:.1f}, std={stats['std']:.1f}, "
+            f"min={stats['min']:.1f}, 25%={stats['25%']:.1f}, median={stats['50%']:.1f}, "
+            f"75%={stats['75%']:.1f}, max={stats['max']:.1f}"
+        )
