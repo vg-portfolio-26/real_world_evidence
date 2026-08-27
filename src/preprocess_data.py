@@ -373,8 +373,7 @@ def extract_baseline_covariates(observations: pd.DataFrame, cohort: pd.DataFrame
         n_corrected = to_correct.sum()
         if n_corrected > 0:
             logging.info(
-                f"  {name} (CODE {code}): {n_corrected:,} records rescaled "
-                f"(x{factor}) - confirmed generation-artifact scale mix-up, not discarded"
+                f"  {name} (CODE {code}): {n_corrected:,} records rescaled (x{factor})"
             )
             observations.loc[to_correct, "VALUE"] = observations.loc[to_correct, "VALUE"] * factor
 

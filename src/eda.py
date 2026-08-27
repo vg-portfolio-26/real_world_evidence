@@ -1,5 +1,3 @@
-""" Exploratory analysis supporting the T2DM cohort-identification logic in preprocess_data.py """
-
 import logging
 import pandas as pd
 from pathlib import Path
@@ -484,8 +482,7 @@ def analyze_implausible_values(cohort_obs: pd.DataFrame, code: str, label: str) 
     scale_shifted = implausible["VALUE"] * 100
     n_recoverable_by_scaling = scale_shifted.between(low, high).sum()
     logging.info(
-        f"  Of these, {n_recoverable_by_scaling:,} would fall within the plausible "
-        f"range if multiplied by 100 - {'suggests a fraction/percentage scale mix-up, worth fixing rather than discarding' if n_recoverable_by_scaling > len(implausible) * 0.5 else 'does not look like a dominant pattern, likely genuine noise'}"
+        f"  Of these, {n_recoverable_by_scaling:,} would fall within the plausible range if multiplied by 100"
     )
 
  
