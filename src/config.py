@@ -308,6 +308,18 @@ TARGET_OVERALL_EVENT_RATE = 0.10  # ~10% cumulative heart failure hospitalizatio
 NEGATIVE_CONTROL_TRUE_LOG_HR = 0.0  # falsification test: no true treatment effect on this simulated outcome
 
 # ---------------------------------------------------------------------------
+# Propensity-model misspecification sensitivity analysis
+#
+# List any of the 6 names in COVARIATE_COLUMNS here to deliberately omit them
+# from the ESTIMATED propensity model only to  tests 
+# how IPTW degrades under a misspecified (as opposed to correctly-specified) propensity model.
+#
+# Leave empty for the default, correctly-specified analysis.
+# ---------------------------------------------------------------------------
+
+PROPENSITY_MODEL_EXCLUDED_COVARIATES = ["age"]
+
+# ---------------------------------------------------------------------------
 # Monte Carlo validation (src/monte_carlo.py)
 # ---------------------------------------------------------------------------
 

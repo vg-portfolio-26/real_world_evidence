@@ -17,6 +17,7 @@ from .config import (
     KM_CURVES_OUTPUT_PATH,
     NEGATIVE_CONTROL_OUTPUT_PATH,
     NEGATIVE_CONTROL_TRUE_LOG_HR,
+    PROPENSITY_MODEL_EXCLUDED_COVARIATES,
 )
 from .helpers import log_separator
 from .injection import (
@@ -31,6 +32,13 @@ from .injection import (
     check_naive_treatment_effect,
     bisect_calibrate,
 )
+
+assert set(PROPENSITY_MODEL_EXCLUDED_COVARIATES) <= set(COVARIATE_COLUMNS), (
+    f"PROPENSITY_MODEL_EXCLUDED_COVARIATES {PROPENSITY_MODEL_EXCLUDED_COVARIATES} "
+    f"must be a subset of COVARIATE_COLUMNS {COVARIATE_COLUMNS}"
+)
+
+PROPENSITY_MODEL_COVARIATES = [c for c in COVARIATE_COLUMNS if c not in PROPENSITY_MODEL_EXCLUDED_COVARIATES]
 
 
 def load_analysis_dataset() -> pd.DataFrame:
@@ -50,16 +58,19 @@ def load_analysis_dataset() -> pd.DataFrame:
 
 
 def estimate_propensity_scores(data: pd.DataFrame) -> pd.Series:
-    """ Logistic regression predicting P(SGLT2i) from the same 6 baseline covariates used in the true assignment mechanism in src/injection.py """
-    logging.info("Estimating propensity scores (logistic regression on 6 baseline covariates) ...")
+    """ Logistic regression predicting P(SGLT2i) from PROPENSITY_MODEL_COVARIATES - by default the same 6 covariates used in the true assignment mechanism in src/injection.py, unless PROPENSITY_MODEL_EXCLUDED_COVARIATES is set for a misspecification sensitivity analysis """
+    logging.info(f"Estimating propensity scores (logistic regression on {len(PROPENSITY_MODEL_COVARIATES)} baseline covariates: {PROPENSITY_MODEL_COVARIATES}) ...")
+    if PROPENSITY_MODEL_EXCLUDED_COVARIATES:
+        logging.info(f"  NOTE: propensity model deliberately excludes {PROPENSITY_MODEL_EXCLUDED_COVARIATES} (misspecification sensitivity analysis)")
+
     standardized = standardize_covariates(data)
 
-    X = sm.add_constant(standardized[COVARIATE_COLUMNS])
+    X = sm.add_constant(standardized[PROPENSITY_MODEL_COVARIATES])
     y = (data["treatment"] == "SGLT2i").astype(int)
 
     model = sm.Logit(y, X).fit(disp=0)
     logging.info("Propensity model coefficients (standardized covariates):")
-    for col in COVARIATE_COLUMNS:
+    for col in PROPENSITY_MODEL_COVARIATES:
         logging.info(f"  {col}: coef={model.params[col]:+.3f}, p={model.pvalues[col]:.4f}")
 
     propensity_scores = model.predict(X)
