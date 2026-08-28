@@ -5,14 +5,21 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import statsmodels.api as sm
-from lifelines import CoxPHFitter
-from lifelines import KaplanMeierFitter
+from lifelines import CoxPHFitter, KaplanMeierFitter
 
-from .helpers import ANALYSIS_DIR, log_separator
-from .injection import (
+from .config import (
     COMPLETE_CASE_COHORT_PATH,
     TREATMENT_ASSIGNMENT_OUTPUT_PATH,
     HF_OUTCOME_OUTPUT_PATH,
+    PROPENSITY_SCORES_OUTPUT_PATH,
+    RESULTS_SUMMARY_OUTPUT_PATH,
+    LOVE_PLOT_OUTPUT_PATH,
+    KM_CURVES_OUTPUT_PATH,
+    NEGATIVE_CONTROL_OUTPUT_PATH,
+    NEGATIVE_CONTROL_TRUE_LOG_HR,
+)
+from .helpers import log_separator
+from .injection import (
     COVARIATE_COLUMNS,
     OUTCOME_COEFFICIENTS,
     FOLLOWUP_DAYS,
@@ -23,14 +30,6 @@ from .injection import (
     check_covariate_balance_by_treatment_arm,
     check_naive_treatment_effect,
 )
-
-PROPENSITY_SCORES_OUTPUT_PATH = ANALYSIS_DIR / "propensity_scores.csv"
-RESULTS_SUMMARY_OUTPUT_PATH = ANALYSIS_DIR / "results_summary.csv"
-LOVE_PLOT_OUTPUT_PATH = ANALYSIS_DIR / "love_plot.png"
-KM_CURVES_OUTPUT_PATH = ANALYSIS_DIR / "km_curves.png"
-NEGATIVE_CONTROL_OUTPUT_PATH = ANALYSIS_DIR / "negative_control_results.csv"
-
-NEGATIVE_CONTROL_TRUE_LOG_HR = 0.0
 
 
 def load_analysis_dataset() -> pd.DataFrame:

@@ -3,70 +3,20 @@ import numpy as np
 import pandas as pd
 from lifelines import CoxPHFitter
 
-from .helpers import PREPROCESSED_DATA_DIR, INJECTED_DATA_DIR, log_separator
-
-COMPLETE_CASE_COHORT_PATH = PREPROCESSED_DATA_DIR / "complete_case_cohort.csv"
-TREATMENT_ASSIGNMENT_OUTPUT_PATH = INJECTED_DATA_DIR / "treatment_assignment.csv"
-HF_OUTCOME_OUTPUT_PATH = INJECTED_DATA_DIR / "hf_outcome.csv"
-
-RANDOM_SEED = 42
-
-# ---------------------------------------------------------------------------
-# Logistic model coefficients for P(SGLT2i), on STANDARDIZED covariates (z-scores relative to this cohort's own mean/std). 
-# Positive coefficient = higher value of that covariate increases probability of SGLT2i (vs. DPP-4i).
-#
-#   age:           negative        - older patients more likely DPP-4i
-#   bmi:           positive        - higher BMI more likely SGLT2i (weight-loss indication)
-#   egfr:          positive        - better renal function more likely SGLT2i
-#   hba1c:         ~0              - HbA1c doesn't strongly differentiate the choice between these two classes
-#   systolic_bp:   slight positive - modest cardiometabolic-risk signal
-#   creatinine:    negative        - worse renal function (higher creatinine) less likely SGLT2i, consistent with egfr
-#
-# Intercept is set to target an overall ~40-50% SGLT2i assignment rate
-# at the cohort's mean covariate values (calibrated empirically once the model is run).
-# ---------------------------------------------------------------------------
-
-ASSIGNMENT_COEFFICIENTS = {
-    "age": -0.35,
-    "bmi": 0.30,
-    "egfr": 0.40,
-    "hba1c": 0.05,
-    "systolic_bp": 0.10,
-    "creatinine": -0.25,
-}
-
-COVARIATE_COLUMNS = list(ASSIGNMENT_COEFFICIENTS.keys())
-
-# ---------------------------------------------------------------------------
-# Injected outcome: incident heart failure hospitalization
-#
-# Model: exponential proportional-hazards simulation.
-#
-#   hazard_i = lambda_0 * exp(beta_treat * I(SGLT2i) + sum(beta_k * covariate_k_std))
-#
-# TRUE treatment effect (beta_treat) is set to reflect the real,
-# published SGLT2i cardioprotective effect on HF hospitalization
-# (EMPA-REG OUTCOME, DECLARE-TIMI 58, CVD-REAL: HR approx 0.65-0.70).
-# This is the ground-truth effect the causal pipeline should recover later.
-#
-# Covariate coefficients: age, HbA1c, systolic BP, and creatinine increase heart failure risk;
-# eGFR is protective (higher = lower risk); BMI has a modest positive association.
-# ---------------------------------------------------------------------------
- 
-TRUE_SGLT2I_HAZARD_RATIO = 0.67  # midpoint of EMPA-REG/DECLARE/CVD-REAL range
-TRUE_SGLT2I_LOG_HR = np.log(TRUE_SGLT2I_HAZARD_RATIO)
- 
-OUTCOME_COEFFICIENTS = {
-    "age": 0.30,
-    "bmi": 0.15,
-    "egfr": -0.35,
-    "hba1c": 0.20,
-    "systolic_bp": 0.15,
-    "creatinine": 0.25,
-}
- 
-FOLLOWUP_DAYS = 365 *2   # 2-year administrative censoring horizon
-TARGET_OVERALL_EVENT_RATE = 0.10  # ~10% cumulative heart failure hospitalization incidence over 2 years
+from .config import (
+    COMPLETE_CASE_COHORT_PATH,
+    TREATMENT_ASSIGNMENT_OUTPUT_PATH,
+    HF_OUTCOME_OUTPUT_PATH,
+    RANDOM_SEED,
+    ASSIGNMENT_COEFFICIENTS,
+    COVARIATE_COLUMNS,
+    TRUE_SGLT2I_HAZARD_RATIO,
+    TRUE_SGLT2I_LOG_HR,
+    OUTCOME_COEFFICIENTS,
+    FOLLOWUP_DAYS,
+    TARGET_OVERALL_EVENT_RATE,
+)
+from .helpers import log_separator
 
 
 def standardize_covariates(cohort: pd.DataFrame) -> pd.DataFrame:

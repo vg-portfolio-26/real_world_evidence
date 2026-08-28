@@ -10,15 +10,15 @@ from lifelines import CoxPHFitter
 from . import injection
 from . import analysis
 from .injection import standardize_covariates
-from .helpers import MONTE_CARLO_OUTPUT_DIR, log_separator, find_latest_completed_run
-
-N_SEEDS = 50
-BASE_SEED = 1000
-
-MONTE_CARLO_RESULTS_PATH = MONTE_CARLO_OUTPUT_DIR / "monte_carlo_results.csv"
-MONTE_CARLO_PLOT_PATH = MONTE_CARLO_OUTPUT_DIR / "monte_carlo_hr_distribution.png"
-
-PATHOLOGICAL_HR_BOUNDS = (0.05, 5.0)
+from .config import (
+    MONTE_CARLO_RESULTS_PATH,
+    MONTE_CARLO_PLOT_PATH,
+    N_SEEDS,
+    BASE_SEED,
+    PATHOLOGICAL_HR_BOUNDS,
+    RANDOM_SEED as DEFAULT_RANDOM_SEED,
+)
+from .helpers import log_separator, find_latest_completed_run
 
 
 @contextmanager
@@ -215,7 +215,7 @@ def run_monte_carlo_validation(n_seeds: int = N_SEEDS, base_seed: int = BASE_SEE
     if failed_seeds:
         logging.warning(f"{len(failed_seeds)}/{n_seeds} realizations failed to converge (seeds: {failed_seeds}) ")
 
-    injection.RANDOM_SEED = 42
+    injection.RANDOM_SEED = DEFAULT_RANDOM_SEED
 
     results = pd.DataFrame(rows)
     results.to_csv(MONTE_CARLO_RESULTS_PATH, index=False)

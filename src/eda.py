@@ -2,52 +2,28 @@ import logging
 import pandas as pd
 from pathlib import Path
 
+from .config import (
+    CONDITIONS_PATH,
+    MEDICATIONS_PATH,
+    OBSERVATIONS_PATH,
+    PATIENTS_PATH,
+    T2DM_PATIENTS_OUTPUT_PATH,
+    HF_INCLUSION_CODES,
+    METFORMIN_COHORT_OUTPUT_PATH,
+    BASELINE_WINDOW_DAYS_AFTER_INDEX,
+    BASELINE_COVARIATES_OUTPUT_PATH,
+    NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH,
+    PLAUSIBLE_RANGES,
+    COVARIATE_OBSERVATION_CODES,
+    EXPLORATORY_DIABETES_PATTERN,
+    BASE_DX_DESCRIPTION,
+    COMPLICATION_PATTERN,
+    EXPLORATORY_HF_PATTERN,
+    T2DM_EXCLUDED_CODES,
+    ANTIDIABETIC_PATTERN,
+    BASELINE_COVARIATE_PATTERN,
+)
 from .helpers import log_separator
-from .preprocess_data import T2DM_PATIENTS_OUTPUT_PATH, HF_INCLUSION_CODES, METFORMIN_COHORT_OUTPUT_PATH, BASELINE_WINDOW_DAYS_AFTER_INDEX, BASELINE_COVARIATES_OUTPUT_PATH, NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH, PLAUSIBLE_RANGES, COVARIATE_OBSERVATION_CODES
-
-
-RAW_DATA_DIR = Path("raw_data/csv")
-CONDITIONS_PATH = RAW_DATA_DIR / "conditions.csv"
-MEDICATIONS_PATH = RAW_DATA_DIR / "medications.csv"
-OBSERVATIONS_PATH = RAW_DATA_DIR / "observations.csv"
-PATIENTS_PATH = RAW_DATA_DIR / "patients.csv"
-
-EXPLORATORY_DIABETES_PATTERN = "diabetes"
-BASE_DX_DESCRIPTION = "Diabetes mellitus type 2 (disorder)"
-COMPLICATION_PATTERN = "type 2 diabetes|type II diabetes"
-EXPLORATORY_HF_PATTERN = "heart failure"
-
-# Explicitly excluded:
-#   - 15777000  (Prediabetes): distinct, earlier-stage condition
-#   - 127013003 (Disorder of kidney due to diabetes mellitus): does not specify type 1 vs type 2
-#   - 427089005 (Diabetes from Cystic Fibrosis): not T2DM
-#   - Z13.1 (Encounter for screening for diabetes mellitus): not a diagnosis
-T2DM_EXCLUDED_CODES = {
-    "15777000": "Prediabetes",
-    "127013003": "Disorder of kidney due to diabetes mellitus (disorder) - type-ambiguous",
-    "427089005": "Diabetes from Cystic Fibrosis - distinct disease entity",
-    "Z13.1": "Encounter for screening for diabetes mellitus - not diagnosis",
-}
-
-ANTIDIABETIC_PATTERN = (
-    "metformin|insulin|glipizide|glyburide|glimepiride|"
-    "gliflozin|gliptin|glitazone|liraglutide|semaglutide|"
-    "exenatide|dulaglutide|glargine|detemir|degludec"
-)
-
-BASELINE_COVARIATE_PATTERN = (
-    "body mass index|bmi|glomerular filtration|egfr|creatinine|"
-    "blood pressure|systolic|diastolic|hemoglobin a1c|hba1c"
-)
-
-TARGET_COVARIATE_CODES = {
-    "39156-5": "BMI",
-    "4548-4": "HbA1c",
-    "8480-6": "Systolic BP",
-    "8462-4": "Diastolic BP",
-    "33914-3": "eGFR (MDRD)",
-    "38483-4": "Creatinine",
-}
 
 
 def load_conditions(path: Path) -> pd.DataFrame:
@@ -502,7 +478,7 @@ def run_eda_observations():
     check_for_target_covariate_observations(cohort_obs)
     log_separator()
 
-    flagged_codes = check_code_consistency_for_observations(cohort_obs, TARGET_COVARIATE_CODES)
+    flagged_codes = check_code_consistency_for_observations(cohort_obs, COVARIATE_OBSERVATION_CODES)
 
     if flagged_codes:
         log_separator()
@@ -513,7 +489,7 @@ def run_eda_observations():
         logging.info("No target covariate CODEs flagged - all consistent, no further value-distribution check needed")
 
     log_separator()
-    analyze_nearest_observation_distance_distribution(cohort_obs, TARGET_COVARIATE_CODES)
+    analyze_nearest_observation_distance_distribution(cohort_obs, COVARIATE_OBSERVATION_CODES)
 
     log_separator()
     for code, label in COVARIATE_OBSERVATION_CODES.items():

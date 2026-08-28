@@ -1,19 +1,17 @@
 import sys
 import logging
-from datetime import datetime
 from pathlib import Path
 
-OUTPUT_DIR = Path("output")
+from .config import (
+    OUTPUT_DIR,
+    RUN_DIR,
+    LOG_FILE,
+    PREPROCESSED_DATA_DIR,
+    INJECTED_DATA_DIR,
+    ANALYSIS_DIR,
+    MONTE_CARLO_OUTPUT_DIR,
+)
 
-RUN_TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
-RUN_DIR = OUTPUT_DIR / RUN_TIMESTAMP
-
-LOG_FILE = RUN_DIR / "pipeline.log"
-
-PREPROCESSED_DATA_DIR = RUN_DIR / "01_preprocessed_data"
-INJECTED_DATA_DIR = RUN_DIR / "02_injected_data"
-ANALYSIS_DIR = RUN_DIR / "03_analysis"
-MONTE_CARLO_OUTPUT_DIR = RUN_DIR / "04_monte_carlo_results"
 
 def setup_pipeline(monte_carlo=False):
     """ Create necessary directories and configure logging """
