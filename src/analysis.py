@@ -181,32 +181,35 @@ def build_results_table(naive_result: dict, iptw_result: dict, dr_result: dict) 
     return table
 
 
-def plot_love_plot(unadjusted_smds: dict, weighted_smds: dict) -> None:
+def plot_love_plot(unadjusted_smds: dict, weighted_smds: dict, output_path=None, title: str = "Covariate Balance Before/After IPTW") -> None:
     """ SMD per covariate, before (unadjusted) vs. after (IPTW-weighted) """
+    if output_path is None:
+        output_path = LOVE_PLOT_OUTPUT_PATH
+ 
     covariates = COVARIATE_COLUMNS
     y_positions = np.arange(len(covariates))
-
+ 
     fig, ax = plt.subplots(figsize=(7, 5))
     ax.scatter([unadjusted_smds[c] for c in covariates], y_positions, label="Before (unadjusted)", color="tab:red", zorder=3)
     ax.scatter([weighted_smds[c] for c in covariates], y_positions, label="After (IPTW)", color="tab:blue", zorder=3)
-
+ 
     for y, c in zip(y_positions, covariates):
         ax.plot([unadjusted_smds[c], weighted_smds[c]], [y, y], color="gray", linewidth=0.8, zorder=1)
-
+ 
     ax.axvline(0.1, color="black", linestyle="--", linewidth=0.8)
     ax.axvline(-0.1, color="black", linestyle="--", linewidth=0.8)
     ax.axvline(0, color="black", linewidth=0.6)
-
+ 
     ax.set_yticks(y_positions)
     ax.set_yticklabels(covariates)
     ax.set_xlabel("Standardized Mean Difference (SGLT2i vs. DPP-4i)")
-    ax.set_title("Covariate Balance Before/After IPTW (Love Plot)")
+    ax.set_title(title)
     ax.legend()
     fig.tight_layout()
-
-    fig.savefig(LOVE_PLOT_OUTPUT_PATH, dpi=150)
+ 
+    fig.savefig(output_path, dpi=150)
     plt.close(fig)
-    logging.info(f"Saved: {LOVE_PLOT_OUTPUT_PATH}")
+    logging.info(f"Saved: {output_path}")
 
 
 def plot_km_curves(data: pd.DataFrame) -> None:

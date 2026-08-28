@@ -1,6 +1,5 @@
 from datetime import datetime
 from pathlib import Path
-
 import numpy as np
 
 # ---------------------------------------------------------------------------
@@ -66,6 +65,7 @@ NEGATIVE_CONTROL_OUTPUT_PATH = ANALYSIS_DIR / "negative_control_results.csv"
 
 MONTE_CARLO_RESULTS_PATH = MONTE_CARLO_OUTPUT_DIR / "monte_carlo_results.csv"
 MONTE_CARLO_PLOT_PATH = MONTE_CARLO_OUTPUT_DIR / "monte_carlo_hr_distribution.png"
+MONTE_CARLO_LOVE_PLOT_PATH = MONTE_CARLO_OUTPUT_DIR / "monte_carlo_love_plot.png"
 
 # ---------------------------------------------------------------------------
 # T2DM inclusion logic: CODE-based (SNOMED-CT)

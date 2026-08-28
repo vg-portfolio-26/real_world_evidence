@@ -13,6 +13,7 @@ from .injection import standardize_covariates
 from .config import (
     MONTE_CARLO_RESULTS_PATH,
     MONTE_CARLO_PLOT_PATH,
+    MONTE_CARLO_LOVE_PLOT_PATH,
     N_SEEDS,
     BASE_SEED,
     PATHOLOGICAL_HR_BOUNDS,
@@ -33,20 +34,25 @@ def quiet_logging():
         root_logger.setLevel(original_level)
 
 
-def run_single_realization(cohort: pd.DataFrame, seed: int) -> dict:
+def run_single_realization(cohort: pd.DataFrame, seed: int) -> tuple:
     """ One full injection + analysis realization for a given seed """
     injection.RANDOM_SEED = seed
-
+ 
     with quiet_logging():
         assignment = injection.assign_treatment(cohort)
         outcome = injection.simulate_hf_outcome(cohort, assignment)
-
+ 
         data = cohort.merge(assignment[["patient_id", "treatment"]], on="patient_id") \
                      .merge(outcome[["patient_id", "hf_event_days", "hf_event_occurred"]], on="patient_id")
-
+ 
         propensity_scores = analysis.estimate_propensity_scores(data)
         weights = analysis.compute_iptw_weights(propensity_scores, data["treatment"])
-
+ 
+        unadjusted_smds = injection.check_covariate_balance_by_treatment_arm(
+            data[["patient_id"] + analysis.COVARIATE_COLUMNS], data[["patient_id", "treatment"]]
+        )
+        weighted_smds = analysis.check_weighted_covariate_balance(data, weights)
+ 
         try:
             naive_result = injection.check_naive_treatment_effect(data[["hf_event_days", "hf_event_occurred", "treatment"]])
             iptw_result = analysis.fit_weighted_cox_model(data, weights)
@@ -56,7 +62,7 @@ def run_single_realization(cohort: pd.DataFrame, seed: int) -> dict:
                 f"ps_min={propensity_scores.min():.4f}, ps_max={propensity_scores.max():.4f}, "
                 f"weight_max={weights.max():.2f}: {type(e).__name__}: {e}"
             ) from e
-
+ 
     row = {
         "seed": seed,
         "ps_min": propensity_scores.min(),
@@ -68,8 +74,10 @@ def run_single_realization(cohort: pd.DataFrame, seed: int) -> dict:
         row[f"{prefix}_ci_low"] = result["ci_low"]
         row[f"{prefix}_ci_high"] = result["ci_high"]
         row[f"{prefix}_covers_truth"] = result["ci_low"] <= injection.TRUE_SGLT2I_HAZARD_RATIO <= result["ci_high"]
-
-    return row
+ 
+    smds = {"unadjusted": unadjusted_smds, "weighted": weighted_smds}
+ 
+    return row, smds
 
 
 def summarize_monte_carlo_results(results: pd.DataFrame) -> None:
@@ -188,41 +196,64 @@ def run_pathological_seed_diagnostics(cohort: pd.DataFrame, results: pd.DataFram
         investigate_pathological_seed(cohort, seed)
 
 
+def plot_mean_love_plot(all_smds: list) -> None:
+    """ Averages the per-covariate unadjusted and IPTW-weighted SMDs across all successful Monte Carlo seeds """
+    mean_unadjusted = {
+        col: np.mean([s["unadjusted"][col] for s in all_smds])
+        for col in analysis.COVARIATE_COLUMNS
+    }
+    mean_weighted = {
+        col: np.mean([s["weighted"][col] for s in all_smds])
+        for col in analysis.COVARIATE_COLUMNS
+    }
+ 
+    analysis.plot_love_plot(
+        mean_unadjusted,
+        mean_weighted,
+        output_path=MONTE_CARLO_LOVE_PLOT_PATH,
+        title=f"Covariate Balance Before/After IPTW (mean across {len(all_smds)} seeds)",
+    )
+
+
 def run_monte_carlo_validation(n_seeds: int = N_SEEDS, base_seed: int = BASE_SEED):
     """ Runs the full Monte Carlo validation: repeated injection+analysis realizations, summary, and diagnostics """
     source_run_dir = find_latest_completed_run("complete_case_cohort.csv")
     cohort_path = source_run_dir / "01_preprocessed_data" / "complete_case_cohort.csv"
-
+ 
     logging.info(f"Loading complete-case cohort from {cohort_path} ...")
     cohort = pd.read_csv(cohort_path, parse_dates=["metformin_start_date"])
     logging.info(f"  {len(cohort):,} patients loaded")
     log_separator()
 
     logging.info(f"Running {n_seeds} Monte Carlo realizations (seeds {base_seed}-{base_seed + n_seeds - 1}) ...")
-
+ 
     rows = []
+    all_smds = []
     failed_seeds = []
     for i, seed in enumerate(range(base_seed, base_seed + n_seeds)):
         try:
-            rows.append(run_single_realization(cohort, seed))
+            row, smds = run_single_realization(cohort, seed)
+            rows.append(row)
+            all_smds.append(smds)
         except Exception as e:
             logging.warning(f"  Seed {seed} failed: {e}")
             failed_seeds.append(seed)
-
+ 
         if (i + 1) % 10 == 0:
             logging.info(f"  Completed {i + 1}/{n_seeds} realizations ...")
-
+ 
     if failed_seeds:
         logging.warning(f"{len(failed_seeds)}/{n_seeds} realizations failed to converge (seeds: {failed_seeds}) ")
-
+ 
     injection.RANDOM_SEED = DEFAULT_RANDOM_SEED
-
+ 
     results = pd.DataFrame(rows)
     results.to_csv(MONTE_CARLO_RESULTS_PATH, index=False)
     logging.info(f"Saved: {MONTE_CARLO_RESULTS_PATH} ({len(results)}/{n_seeds} successful)")
     log_separator()
-
+ 
     summarize_monte_carlo_results(results)
     plot_hr_distribution(results)
+    plot_mean_love_plot(all_smds)
     log_separator()
     run_pathological_seed_diagnostics(cohort, results)
