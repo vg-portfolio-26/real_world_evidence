@@ -34,6 +34,7 @@ NEGATIVE_CONTROL_TRUE_LOG_HR = 0.0
 
 
 def load_analysis_dataset() -> pd.DataFrame:
+    """ Merges the complete-case cohort with injected treatment and outcome data into one analysis dataset """
     logging.info(f"Loading complete-case cohort from {COMPLETE_CASE_COHORT_PATH} ...")
     cohort = pd.read_csv(COMPLETE_CASE_COHORT_PATH, parse_dates=["metformin_start_date"])
 
@@ -326,6 +327,7 @@ def run_e_value_analysis(doubly_robust_result: dict) -> None:
 
 
 def run_propensity_analysis():
+    """ Runs the full propensity-score/IPTW/doubly-robust analysis, plus negative control and E-value checks """
     data = load_analysis_dataset()
     log_separator()
 

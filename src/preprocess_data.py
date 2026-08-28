@@ -164,15 +164,17 @@ def _strip_timezone(df: pd.DataFrame, date_columns: list) -> pd.DataFrame:
 
 
 def load_conditions(path: Path) -> pd.DataFrame:
+    """ Loads condition records with timezone-naive dates """
     df = pd.read_csv(
         path,
         usecols=["START", "STOP", "PATIENT", "DESCRIPTION", "CODE"],
         parse_dates=["START", "STOP"],
     )
     return _strip_timezone(df, ["START", "STOP"])
- 
- 
+
+
 def load_patients(path: Path) -> pd.DataFrame:
+    """ Loads patient demographics with timezone-naive dates """
     df = pd.read_csv(
         path,
         usecols=["Id", "BIRTHDATE", "DEATHDATE", "GENDER", "RACE"],
@@ -180,9 +182,10 @@ def load_patients(path: Path) -> pd.DataFrame:
     )
     df = df.rename(columns={"Id": "patient_id"})
     return _strip_timezone(df, ["BIRTHDATE", "DEATHDATE"])
- 
- 
+
+
 def load_medications(path: Path) -> pd.DataFrame:
+    """ Loads medication records with timezone-naive dates """
     df = pd.read_csv(
         path,
         usecols=["START", "STOP", "PATIENT", "DESCRIPTION", "CODE"],
@@ -215,6 +218,7 @@ def load_baseline_observations(path: Path, patient_ids: set, chunksize: int = 1_
 
 
 def identify_t2dm_patients(conditions: pd.DataFrame) -> pd.DataFrame:
+    """ Finds each patient's earliest qualifying T2DM diagnosis date across base and complication codes """
     mask = conditions["CODE"].astype(str).isin(T2DM_INCLUSION_CODES)
     t2dm_conditions = conditions.loc[mask].copy()
 
@@ -235,6 +239,7 @@ def identify_t2dm_patients(conditions: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_t2dm_cohort():
+    """ Builds and saves the T2DM patient cohort from conditions and patient demographics """
     logging.info(f"Loading conditions from {CONDITIONS_PATH} ...")
     conditions = load_conditions(CONDITIONS_PATH)
     logging.info(f"  {len(conditions):,} condition records loaded")
@@ -256,6 +261,7 @@ def build_t2dm_cohort():
 
 
 def identify_metformin_new_users(medications: pd.DataFrame, t2dm_patient_ids: set) -> pd.DataFrame:
+    """ Finds T2DM patients whose first antidiabetic drug was metformin """
     antidiabetic_meds = medications.loc[
         medications["PATIENT"].isin(t2dm_patient_ids)
         & medications["CODE"].astype(str).isin(ANTIDIABETIC_CODES)
@@ -285,6 +291,7 @@ def identify_metformin_new_users(medications: pd.DataFrame, t2dm_patient_ids: se
  
  
 def build_metformin_cohort():
+    """ Builds and saves the metformin new-user cohort from the T2DM cohort and medication records """
     logging.info(f"Loading T2DM cohort from {T2DM_PATIENTS_OUTPUT_PATH} ...")
     t2dm_patients = pd.read_csv(T2DM_PATIENTS_OUTPUT_PATH, usecols=["patient_id"])
     t2dm_patient_ids = set(t2dm_patients["patient_id"].unique())
@@ -323,6 +330,7 @@ def identify_no_prior_hf_patients(conditions: pd.DataFrame, metformin_cohort: pd
 
 
 def build_no_prior_hf_cohort():
+    """ Builds and saves the metformin cohort restricted to patients with no prior heart failure """
     logging.info(f"Loading conditions from {CONDITIONS_PATH} ...")
     conditions = load_conditions(CONDITIONS_PATH)
     logging.info(f"  {len(conditions):,} condition records loaded")
@@ -419,6 +427,7 @@ def extract_baseline_covariates(observations: pd.DataFrame, cohort: pd.DataFrame
 
 
 def build_baseline_covariates():
+    """ Loads the no-prior-HF cohort and observations, extracts baseline covariates, and saves the result """
     logging.info(f"Baseline window: DATE <= metformin_start_date + {BASELINE_WINDOW_DAYS_AFTER_INDEX} days")
     logging.info(f"Loading no-prior-heart-failure cohort from {NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH} ...")
     cohort = pd.read_csv(NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH, parse_dates=["metformin_start_date"])

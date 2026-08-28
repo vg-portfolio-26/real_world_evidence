@@ -12,7 +12,6 @@ LOG_FILE = RUN_DIR / "pipeline.log"
 
 PREPROCESSED_DATA_DIR = RUN_DIR / "01_preprocessed_data"
 INJECTED_DATA_DIR = RUN_DIR / "02_injected_data"
-INJECTED_DATA_DIR = RUN_DIR / "02_injected_data"
 ANALYSIS_DIR = RUN_DIR / "03_analysis"
 MONTE_CARLO_OUTPUT_DIR = RUN_DIR / "04_monte_carlo_results"
 
@@ -47,6 +46,7 @@ def setup_pipeline(monte_carlo=False):
 
 
 def log_separator(title=None):
+    """ Logs a divider line, optionally with a centered title """
     logging.info("=" * 80)
     if title:
         logging.info(title.center(80))

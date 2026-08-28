@@ -109,6 +109,7 @@ def calibrate_intercept(standardized: pd.DataFrame, target_rate: float = 0.45) -
 
 
 def assign_treatment(cohort: pd.DataFrame) -> pd.DataFrame:
+    """ Draws each patient's injected treatment (SGLT2i vs. DPP-4i) from the calibrated assignment model """
     logging.info("Standardizing covariates for treatment-assignment model ...")
     standardized = standardize_covariates(cohort)
 
@@ -156,6 +157,7 @@ def check_covariate_balance_by_treatment_arm(cohort: pd.DataFrame, assignment: p
 
 
 def build_treatment_assignment():
+    """ Loads the complete-case cohort, injects treatment assignment, and saves it with a balance check """
     logging.info(f"Loading complete-case cohort from {COMPLETE_CASE_COHORT_PATH} ...")
     cohort = pd.read_csv(COMPLETE_CASE_COHORT_PATH, parse_dates=["metformin_start_date"])
     logging.info(f"  {len(cohort):,} patients loaded")
@@ -199,6 +201,7 @@ def calibrate_baseline_hazard(standardized: pd.DataFrame, treatment: pd.Series, 
  
  
 def simulate_hf_outcome(cohort: pd.DataFrame, assignment: pd.DataFrame) -> pd.DataFrame:
+    """ Simulates each patient's injected HF hospitalization event time and censoring status """
     merged = cohort.merge(assignment[["patient_id", "treatment"]], on="patient_id")
  
     logging.info("Standardizing covariates for outcome model ...")
@@ -255,6 +258,7 @@ def check_naive_treatment_effect(outcome: pd.DataFrame) -> dict:
  
  
 def build_hf_outcome():
+    """ Loads the cohort and treatment assignment, injects the HF outcome, and saves it with a naive-effect check """
     logging.info(f"Loading complete-case cohort from {COMPLETE_CASE_COHORT_PATH} ...")
     cohort = pd.read_csv(COMPLETE_CASE_COHORT_PATH, parse_dates=["metformin_start_date"])
     logging.info(f"  {len(cohort):,} patients loaded")

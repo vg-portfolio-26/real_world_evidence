@@ -51,6 +51,7 @@ TARGET_COVARIATE_CODES = {
 
 
 def load_conditions(path: Path) -> pd.DataFrame:
+    """ Loads condition records for exploratory analysis """
     df = pd.read_csv(
         path,
         usecols=["START", "STOP", "PATIENT", "DESCRIPTION", "CODE"],
@@ -61,6 +62,7 @@ def load_conditions(path: Path) -> pd.DataFrame:
 
 
 def load_medications(path: Path) -> pd.DataFrame:
+    """ Loads medication records for exploratory analysis """
     df = pd.read_csv(
         path,
         usecols=["START", "STOP", "PATIENT", "DESCRIPTION", "CODE"],
@@ -148,6 +150,7 @@ def compare_base_dx_vs_complication_only(conditions: pd.DataFrame) -> None:
 
 
 def log_excluded_categories(conditions: pd.DataFrame) -> None:
+    """ Logs record/patient counts for codes deliberately excluded from the T2DM inclusion rule """
     logging.info("Excluded / ambiguous codes (not counted as T2DM evidence alone):")
     for code, reason in T2DM_EXCLUDED_CODES.items():
         subset = conditions.loc[conditions["CODE"].astype(str) == code]
@@ -188,6 +191,7 @@ def check_code_vs_description_matching(conditions: pd.DataFrame, pattern: str, l
 
 
 def run_eda_conditions():
+    """ Runs the full EDA pass supporting the T2DM cohort inclusion logic """
     logging.info(f"Loading conditions from {CONDITIONS_PATH} ...")
     conditions = load_conditions(CONDITIONS_PATH)
     logging.info(f"  {len(conditions):,} condition records loaded")
@@ -254,6 +258,7 @@ def check_for_missed_antidiabetic_drugs(cohort_meds: pd.DataFrame) -> None:
 
  
 def run_eda_medications():
+    """ Runs the full EDA pass supporting the metformin new-user/monotherapy cohort logic """
     logging.info(f"Loading T2DM patient IDs from {T2DM_PATIENTS_OUTPUT_PATH} ...")
     t2dm_patients = pd.read_csv(T2DM_PATIENTS_OUTPUT_PATH, usecols=["patient_id"])
     t2dm_patient_ids = set(t2dm_patients["patient_id"].unique())
@@ -486,6 +491,7 @@ def analyze_implausible_values(cohort_obs: pd.DataFrame, code: str, label: str) 
 
  
 def run_eda_observations():
+    """ Runs the full EDA pass supporting the baseline-covariate extraction logic """
     logging.info(f"Loading no-prior-heart-failure-cohort patient IDs from {NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH} ...")
     cohort = pd.read_csv(NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH, usecols=["patient_id"])
     patient_ids = set(cohort["patient_id"].unique())

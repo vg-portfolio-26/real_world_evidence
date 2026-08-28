@@ -6,6 +6,7 @@ from .analysis import run_propensity_analysis
 
 
 def main():
+    """ Runs the full pipeline end to end: EDA, cohort building, injection, and analysis """
     setup_pipeline()
 
     log_separator("Starting pipeline")

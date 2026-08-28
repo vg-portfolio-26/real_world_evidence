@@ -73,6 +73,7 @@ def run_single_realization(cohort: pd.DataFrame, seed: int) -> dict:
 
 
 def summarize_monte_carlo_results(results: pd.DataFrame) -> None:
+    """ Logs mean HR, std, and empirical CI coverage per estimator across all seeds """
     true_hr = injection.TRUE_SGLT2I_HAZARD_RATIO
     logging.info(f"Monte Carlo summary across {len(results)} seeds (true HR = {true_hr:.3f}):")
     for prefix, label in [("naive", "Naive"), ("iptw", "IPTW-weighted"), ("dr", "Doubly-robust")]:
@@ -86,6 +87,7 @@ def summarize_monte_carlo_results(results: pd.DataFrame) -> None:
 
 
 def plot_hr_distribution(results: pd.DataFrame) -> None:
+    """ Plots the distribution of HR estimates across seeds for each estimator against the true HR """
     true_hr = injection.TRUE_SGLT2I_HAZARD_RATIO
 
     fig, ax = plt.subplots(figsize=(7, 5))
@@ -180,12 +182,14 @@ def investigate_pathological_seed(cohort: pd.DataFrame, seed: int) -> None:
 
 
 def run_pathological_seed_diagnostics(cohort: pd.DataFrame, results: pd.DataFrame) -> None:
+    """ Finds pathological seeds and runs stability diagnostics on each """
     seeds = find_pathological_seeds(results)
     for seed in seeds:
         investigate_pathological_seed(cohort, seed)
 
 
 def run_monte_carlo_validation(n_seeds: int = N_SEEDS, base_seed: int = BASE_SEED):
+    """ Runs the full Monte Carlo validation: repeated injection+analysis realizations, summary, and diagnostics """
     source_run_dir = find_latest_completed_run("complete_case_cohort.csv")
     cohort_path = source_run_dir / "01_preprocessed_data" / "complete_case_cohort.csv"
 
