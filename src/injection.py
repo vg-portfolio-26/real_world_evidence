@@ -139,16 +139,20 @@ def check_covariate_balance_by_treatment_arm(cohort: pd.DataFrame, assignment: p
  
     sglt2i = merged.loc[merged["treatment"] == "SGLT2i"]
     dpp4i = merged.loc[merged["treatment"] == "DPP4i"]
- 
+
+    smds = {}
     logging.info(f"Covariate balance by treatment arm (SGLT2i n={len(sglt2i):,}, DPP-4i n={len(dpp4i):,}):")
     for col in COVARIATE_COLUMNS:
         mean_sglt2i = sglt2i[col].mean()
         mean_dpp4i = dpp4i[col].mean()
         pooled_std = np.sqrt((sglt2i[col].var() + dpp4i[col].var()) / 2)
         smd = (mean_sglt2i - mean_dpp4i) / pooled_std if pooled_std > 0 else 0.0
+        smds[col] = smd
  
         flag = "  <- imbalanced (|SMD| > 0.1), confounding present as intended" if abs(smd) > 0.1 else ""
         logging.info(f"  {col}: SGLT2i mean={mean_sglt2i:.2f}, DPP-4i mean={mean_dpp4i:.2f}, SMD={smd:+.3f}{flag}")
+
+    return smds
 
 
 def build_treatment_assignment():
@@ -206,7 +210,6 @@ def simulate_hf_outcome(cohort: pd.DataFrame, assignment: pd.DataFrame) -> pd.Da
  
     hazard = compute_hazard(standardized, merged["treatment"], log_lambda_0)
 
-    # distinct stream from treatment assignment's RNG
     rng = np.random.default_rng(RANDOM_SEED + 1)
     uniform_draw = rng.uniform(size=len(merged))
 
@@ -231,9 +234,8 @@ def simulate_hf_outcome(cohort: pd.DataFrame, assignment: pd.DataFrame) -> pd.Da
     return result
 
 
-def check_naive_treatment_effect(outcome: pd.DataFrame) -> None:
+def check_naive_treatment_effect(outcome: pd.DataFrame) -> dict:
     """ Fits a simple unadjusted Cox proportional hazards model with treatment as the only covariate to quantify the naive confounding bias """
- 
     cox_data = outcome[["hf_event_days", "hf_event_occurred", "treatment"]].copy()
     cox_data["sglt2i"] = (cox_data["treatment"] == "SGLT2i").astype(int)
     cox_data = cox_data.drop(columns="treatment")
@@ -248,6 +250,8 @@ def check_naive_treatment_effect(outcome: pd.DataFrame) -> None:
     logging.info(f"  Naive HR (SGLT2i vs. DPP-4i): {naive_hr:.3f} (95% CI: {ci_low:.3f}-{ci_high:.3f})")
     logging.info(f"  TRUE injected HR: {TRUE_SGLT2I_HAZARD_RATIO:.3f}")
     logging.info(f"  Naive estimate is {'biased away from' if naive_hr < TRUE_SGLT2I_HAZARD_RATIO else 'biased toward null relative to'} the true effect by confounding")
+ 
+    return {"model": "Naive (unadjusted)", "hr": naive_hr, "ci_low": ci_low, "ci_high": ci_high}
  
  
 def build_hf_outcome():

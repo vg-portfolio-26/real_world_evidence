@@ -3,6 +3,8 @@ import pandas as pd
 from pathlib import Path
 
 from .helpers import log_separator
+from .preprocess_data import T2DM_PATIENTS_OUTPUT_PATH, HF_INCLUSION_CODES, METFORMIN_COHORT_OUTPUT_PATH, BASELINE_WINDOW_DAYS_AFTER_INDEX, BASELINE_COVARIATES_OUTPUT_PATH, NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH, PLAUSIBLE_RANGES, COVARIATE_OBSERVATION_CODES
+
 
 RAW_DATA_DIR = Path("raw_data/csv")
 CONDITIONS_PATH = RAW_DATA_DIR / "conditions.csv"
@@ -37,6 +39,15 @@ BASELINE_COVARIATE_PATTERN = (
     "body mass index|bmi|glomerular filtration|egfr|creatinine|"
     "blood pressure|systolic|diastolic|hemoglobin a1c|hba1c"
 )
+
+TARGET_COVARIATE_CODES = {
+    "39156-5": "BMI",
+    "4548-4": "HbA1c",
+    "8480-6": "Systolic BP",
+    "8462-4": "Diastolic BP",
+    "33914-3": "eGFR (MDRD)",
+    "38483-4": "Creatinine",
+}
 
 
 def load_conditions(path: Path) -> pd.DataFrame:
@@ -156,8 +167,8 @@ def check_code_vs_description_matching(conditions: pd.DataFrame, pattern: str, l
     description_to_codes = related.groupby("DESCRIPTION")["CODE"].unique()
  
     logging.info(
-        f"Checked {len(code_to_descriptions)} distinct CODEs against "
-        f"{len(description_to_codes)} distinct DESCRIPTIONs for {label}-related conditions"
+        f"  Checked {len(code_to_descriptions)} distinct CODEs against "
+        f"  {len(description_to_codes)} distinct DESCRIPTIONs for {label}-related conditions"
     )
  
     multi_description_codes = code_to_descriptions[code_to_descriptions.apply(len) > 1]
@@ -243,8 +254,6 @@ def check_for_missed_antidiabetic_drugs(cohort_meds: pd.DataFrame) -> None:
 
  
 def run_eda_medications():
-    from .preprocess_data import T2DM_PATIENTS_OUTPUT_PATH
-
     logging.info(f"Loading T2DM patient IDs from {T2DM_PATIENTS_OUTPUT_PATH} ...")
     t2dm_patients = pd.read_csv(T2DM_PATIENTS_OUTPUT_PATH, usecols=["patient_id"])
     t2dm_patient_ids = set(t2dm_patients["patient_id"].unique())
@@ -277,8 +286,7 @@ def explore_heart_failure_related_descriptions(conditions: pd.DataFrame) -> None
  
 def compare_hf_patients_vs_metformin_cohort(conditions: pd.DataFrame, metformin_patient_ids: set) -> None:
     """ How many heart failure patients exist dataset-wide, and how many of those are also in the metformin cohort """
-    from .preprocess_data import HF_INCLUSION_CODES
- 
+    logging.info("Checking heart failure patients share in both condition and metformin cohort table ...")
     hf_conditions = conditions.loc[conditions["CODE"].astype(str).isin(HF_INCLUSION_CODES)]
     hf_patient_ids = set(hf_conditions["PATIENT"].unique())
  
@@ -293,23 +301,18 @@ def compare_hf_patients_vs_metformin_cohort(conditions: pd.DataFrame, metformin_
  
 def run_eda_heart_failure():
     """ EDA supporting the "no prior heart failure at baseline" cohort exclusion step """
-    from .preprocess_data import METFORMIN_COHORT_OUTPUT_PATH
- 
     logging.info(f"Loading conditions from {CONDITIONS_PATH} ...")
     conditions = load_conditions(CONDITIONS_PATH)
     logging.info(f"  {len(conditions):,} condition records loaded")
-    log_separator()
- 
-    explore_heart_failure_related_descriptions(conditions)
-    log_separator()
-    check_code_vs_description_matching(conditions, EXPLORATORY_HF_PATTERN, "heart failure")
-    log_separator()
 
     logging.info(f"Loading metformin-cohort patient IDs from {METFORMIN_COHORT_OUTPUT_PATH} ...")
     metformin_cohort = pd.read_csv(METFORMIN_COHORT_OUTPUT_PATH, usecols=["patient_id"])
     metformin_patient_ids = set(metformin_cohort["patient_id"].unique())
     logging.info(f"  {len(metformin_patient_ids):,} metformin-cohort patient IDs loaded")
+    log_separator()
  
+    explore_heart_failure_related_descriptions(conditions)
+    check_code_vs_description_matching(conditions, EXPLORATORY_HF_PATTERN, "heart failure")
     compare_hf_patients_vs_metformin_cohort(conditions, metformin_patient_ids)
 
 
@@ -423,8 +426,6 @@ def analyze_nearest_observation_distance_distribution(cohort_obs: pd.DataFrame, 
       - a percentile breakdown, revealing the "elbow" where a same-visit cluster ends and a much later cluster begins
       - a single summary line showing how many patients the currently configured window captures
     """
-    from .preprocess_data import NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH, BASELINE_WINDOW_DAYS_AFTER_INDEX
- 
     cohort = pd.read_csv(NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH, parse_dates=["metformin_start_date"])
     if pd.api.types.is_datetime64tz_dtype(cohort["metformin_start_date"]):
         cohort["metformin_start_date"] = cohort["metformin_start_date"].dt.tz_localize(None)
@@ -454,8 +455,6 @@ def analyze_nearest_observation_distance_distribution(cohort_obs: pd.DataFrame, 
 
 def analyze_implausible_values(cohort_obs: pd.DataFrame, code: str, label: str) -> None:
     """ Logs the distribution of the implausible values """
-    from .preprocess_data import PLAUSIBLE_RANGES
- 
     low, high = PLAUSIBLE_RANGES[label]
  
     code_obs = cohort_obs.loc[cohort_obs["CODE"] == code].copy()
@@ -487,8 +486,6 @@ def analyze_implausible_values(cohort_obs: pd.DataFrame, code: str, label: str) 
 
  
 def run_eda_observations():
-    from .preprocess_data import NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH, COVARIATE_OBSERVATION_CODES
- 
     logging.info(f"Loading no-prior-heart-failure-cohort patient IDs from {NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH} ...")
     cohort = pd.read_csv(NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH, usecols=["patient_id"])
     patient_ids = set(cohort["patient_id"].unique())
@@ -498,15 +495,6 @@ def run_eda_observations():
     log_separator()
     check_for_target_covariate_observations(cohort_obs)
     log_separator()
-
-    TARGET_COVARIATE_CODES = {
-        "39156-5": "BMI",
-        "4548-4": "HbA1c",
-        "8480-6": "Systolic BP",
-        "8462-4": "Diastolic BP",
-        "33914-3": "eGFR (MDRD)",
-        "38483-4": "Creatinine",
-    }
 
     flagged_codes = check_code_consistency_for_observations(cohort_obs, TARGET_COVARIATE_CODES)
 
@@ -528,8 +516,6 @@ def run_eda_observations():
 
 def describe_complete_case_cohort_for_injection_calibration():
     """ Descriptive pass over the complete-case cohort """
-    from .preprocess_data import BASELINE_COVARIATES_OUTPUT_PATH, COVARIATE_OBSERVATION_CODES
- 
     logging.info(f"Loading baseline covariates from {BASELINE_COVARIATES_OUTPUT_PATH} ...")
     covariates = pd.read_csv(BASELINE_COVARIATES_OUTPUT_PATH, parse_dates=["metformin_start_date"])
     if pd.api.types.is_datetime64tz_dtype(covariates["metformin_start_date"]):

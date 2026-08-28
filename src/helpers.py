@@ -12,7 +12,8 @@ LOG_FILE = RUN_DIR / "pipeline.log"
 
 PREPROCESSED_DATA_DIR = RUN_DIR / "01_preprocessed_data"
 INJECTED_DATA_DIR = RUN_DIR / "02_injected_data"
-
+INJECTED_DATA_DIR = RUN_DIR / "02_injected_data"
+ANALYSIS_DIR = RUN_DIR / "03_analysis"
 
 def setup_pipeline():
     """ Create necessary directories and configure logging """
@@ -36,7 +37,7 @@ def setup_pipeline():
     logging.info(f"Logging initialized. Run folder: {RUN_DIR}")
     logging.info(f"Writing log to: {LOG_FILE}")
 
-    for d in (PREPROCESSED_DATA_DIR, INJECTED_DATA_DIR):
+    for d in (PREPROCESSED_DATA_DIR, INJECTED_DATA_DIR, ANALYSIS_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
     logging.info("Needed output directories created")
@@ -45,5 +46,5 @@ def setup_pipeline():
 def log_separator(title=None):
     logging.info("=" * 80)
     if title:
-        logging.info(title)
+        logging.info(title.center(80))
         logging.info("=" * 80)

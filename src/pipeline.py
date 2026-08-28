@@ -2,6 +2,7 @@ from .helpers import setup_pipeline, log_separator
 from .eda import run_eda_conditions, run_eda_medications, run_eda_heart_failure, run_eda_observations, describe_complete_case_cohort_for_injection_calibration
 from .preprocess_data import build_t2dm_cohort, build_metformin_cohort, build_no_prior_hf_cohort, build_baseline_covariates, build_complete_case_cohort
 from .injection import build_treatment_assignment, build_hf_outcome
+from .analysis import run_propensity_analysis
 
 
 def main():
@@ -44,6 +45,9 @@ def main():
 
     log_separator("Injection: simulating HF hospitalization outcome")
     build_hf_outcome()
+
+    log_separator("Analysis: propensity score estimation, IPTW, and adjusted Cox model")
+    run_propensity_analysis()
 
     log_separator("Pipeline finished")
 
