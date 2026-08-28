@@ -19,6 +19,18 @@ from .config import (
 from .helpers import log_separator
 
 
+def bisect_calibrate(evaluate_fn, target_rate: float, low: float, high: float, n_iter: int = 50) -> float:
+    """ Binary-searches for the parameter value whose evaluate_fn output has a mean equal to target_rate """
+    for _ in range(n_iter):
+        mid = (low + high) / 2
+        if evaluate_fn(mid).mean() < target_rate:
+            low = mid
+        else:
+            high = mid
+
+    return (low + high) / 2
+
+
 def standardize_covariates(cohort: pd.DataFrame) -> pd.DataFrame:
     """ Z-score each covariate using the cohort's own observed mean/std """
     standardized = cohort.copy()
@@ -45,17 +57,10 @@ def compute_sglt2i_probability(standardized: pd.DataFrame, intercept: float) -> 
 
 def calibrate_intercept(standardized: pd.DataFrame, target_rate: float = 0.45) -> float:
     """ Finds the intercept that makes the COHORT-AVERAGE P(SGLT2i) equal to target_rate by simple bisection search """
-    low, high = -10.0, 10.0
-
-    for _ in range(50):
-        mid = (low + high) / 2
-        avg_prob = compute_sglt2i_probability(standardized, mid).mean()
-        if avg_prob < target_rate:
-            low = mid
-        else:
-            high = mid
-    
-    return (low + high) / 2
+    return bisect_calibrate(
+        lambda intercept: compute_sglt2i_probability(standardized, intercept),
+        target_rate, -10.0, 10.0,
+    )
 
 
 def assign_treatment(cohort: pd.DataFrame) -> pd.DataFrame:
@@ -135,19 +140,11 @@ def compute_hazard(standardized: pd.DataFrame, treatment: pd.Series, log_lambda_
  
 def calibrate_baseline_hazard(standardized: pd.DataFrame, treatment: pd.Series, target_rate: float) -> float:
     """ Finds the log-baseline-hazard that makes the COHORT-AVERAGE 2-year cumulative incidence equal to target_rate by bisection """
-    low, high = -20.0, 5.0
+    def cumulative_incidence(log_lambda_0):
+        hazard = compute_hazard(standardized, treatment, log_lambda_0)
+        return 1 - np.exp(-hazard * FOLLOWUP_DAYS)
 
-    for _ in range(50):
-        mid = (low + high) / 2
-        hazard = compute_hazard(standardized, treatment, mid)
-        cumulative_incidence = 1 - np.exp(-hazard * FOLLOWUP_DAYS)
-        avg_incidence = cumulative_incidence.mean()
-        if avg_incidence < target_rate:
-            low = mid
-        else:
-            high = mid
-
-    return (low + high) / 2
+    return bisect_calibrate(cumulative_incidence, target_rate, -20.0, 5.0)
  
  
 def simulate_hf_outcome(cohort: pd.DataFrame, assignment: pd.DataFrame) -> pd.DataFrame:

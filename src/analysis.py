@@ -29,6 +29,7 @@ from .injection import (
     standardize_covariates,
     check_covariate_balance_by_treatment_arm,
     check_naive_treatment_effect,
+    bisect_calibrate,
 )
 
 
@@ -238,15 +239,10 @@ def simulate_negative_control_outcome(data: pd.DataFrame) -> pd.DataFrame:
             linear_predictor = linear_predictor + coef * standardized[col]
         return np.exp(linear_predictor)
 
-    low, high = -20.0, 5.0
-    for _ in range(50):
-        mid = (low + high) / 2
-        cumulative_incidence = 1 - np.exp(-hazard(mid) * FOLLOWUP_DAYS)
-        if cumulative_incidence.mean() < TARGET_OVERALL_EVENT_RATE:
-            low = mid
-        else:
-            high = mid
-    log_lambda_0 = (low + high) / 2
+    def cumulative_incidence(log_lambda_0):
+        return 1 - np.exp(-hazard(log_lambda_0) * FOLLOWUP_DAYS)
+
+    log_lambda_0 = bisect_calibrate(cumulative_incidence, TARGET_OVERALL_EVENT_RATE, -20.0, 5.0)
 
     final_hazard = hazard(log_lambda_0)
 

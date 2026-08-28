@@ -1,4 +1,5 @@
 import sys
+import shutil
 import logging
 from pathlib import Path
 
@@ -6,11 +7,14 @@ from .config import (
     OUTPUT_DIR,
     RUN_DIR,
     LOG_FILE,
+    SRC_SNAPSHOT_DIR,
     PREPROCESSED_DATA_DIR,
     INJECTED_DATA_DIR,
     ANALYSIS_DIR,
     MONTE_CARLO_OUTPUT_DIR,
 )
+
+SRC_DIR = Path(__file__).resolve().parent
 
 
 def setup_pipeline(monte_carlo=False):
@@ -34,6 +38,9 @@ def setup_pipeline(monte_carlo=False):
 
     logging.info(f"Logging initialized. Run folder: {RUN_DIR}")
     logging.info(f"Writing log to: {LOG_FILE}")
+
+    shutil.copytree(SRC_DIR, SRC_SNAPSHOT_DIR, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "__init__.py"))
+    logging.info(f"Snapshotted src/ to: {SRC_SNAPSHOT_DIR}")
 
     directories = (PREPROCESSED_DATA_DIR, INJECTED_DATA_DIR, ANALYSIS_DIR)
     if monte_carlo: directories = (MONTE_CARLO_OUTPUT_DIR, )

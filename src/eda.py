@@ -24,28 +24,7 @@ from .config import (
     BASELINE_COVARIATE_PATTERN,
 )
 from .helpers import log_separator
-
-
-def load_conditions(path: Path) -> pd.DataFrame:
-    """ Loads condition records for exploratory analysis """
-    df = pd.read_csv(
-        path,
-        usecols=["START", "STOP", "PATIENT", "DESCRIPTION", "CODE"],
-        parse_dates=["START", "STOP"],
-    )
-
-    return df
-
-
-def load_medications(path: Path) -> pd.DataFrame:
-    """ Loads medication records for exploratory analysis """
-    df = pd.read_csv(
-        path,
-        usecols=["START", "STOP", "PATIENT", "DESCRIPTION", "CODE"],
-        parse_dates=["START", "STOP"],
-    )
-
-    return df
+from .preprocess_data import load_conditions, load_medications
 
 
 def load_observations_for_patients(path: Path, patient_ids: set, chunksize: int = 1_000_000) -> pd.DataFrame:

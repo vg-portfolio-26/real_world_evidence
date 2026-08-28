@@ -25,6 +25,8 @@ RUN_DIR = OUTPUT_DIR / RUN_TIMESTAMP
 
 LOG_FILE = RUN_DIR / "pipeline.log"
 
+SRC_SNAPSHOT_DIR = RUN_DIR / "00_src"
+
 PREPROCESSED_DATA_DIR = RUN_DIR / "01_preprocessed_data"
 INJECTED_DATA_DIR = RUN_DIR / "02_injected_data"
 ANALYSIS_DIR = RUN_DIR / "03_analysis"
