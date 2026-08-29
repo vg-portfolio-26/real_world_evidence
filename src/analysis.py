@@ -319,18 +319,18 @@ def compute_e_value(estimate: float) -> float:
     return ratio + np.sqrt(ratio * (ratio - 1))
 
 
-def run_e_value_analysis(doubly_robust_result: dict) -> None:
-    """ Computes the E-value for the doubly-robust point estimate and for the confidence limit closest to the null """
-    hr = doubly_robust_result["hr"]
-    ci_low = doubly_robust_result["ci_low"]
-    ci_high = doubly_robust_result["ci_high"]
+def run_e_value_analysis(iptw_result: dict) -> None:
+    """ Computes the E-value for the IPTW point estimate and for the confidence limit closest to the null """
+    hr = iptw_result["hr"]
+    ci_low = iptw_result["ci_low"]
+    ci_high = iptw_result["ci_high"]
 
     ci_limit_closest_to_null = ci_high if hr < 1 else ci_low
 
     e_value_point = compute_e_value(hr)
     e_value_ci = compute_e_value(ci_limit_closest_to_null)
 
-    logging.info("E-value analysis (doubly-robust estimate):")
+    logging.info("E-value analysis (IPTW-weighted estimate):")
     logging.info(f"  Point estimate HR={hr:.3f} -> E-value = {e_value_point:.2f}")
     logging.info(f"  CI limit closest to null ({ci_limit_closest_to_null:.3f}) -> E-value = {e_value_ci:.2f}")
 
@@ -366,4 +366,4 @@ def run_propensity_analysis():
 
     log_separator()
     run_negative_control_check(data, weights)
-    run_e_value_analysis(dr_result)
+    run_e_value_analysis(iptw_result)

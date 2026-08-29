@@ -1,5 +1,5 @@
 from .helpers import setup_pipeline, log_separator
-from .eda import run_eda_conditions, run_eda_medications, run_eda_heart_failure, run_eda_observations, describe_complete_case_cohort_for_injection_calibration
+from .eda import run_eda_conditions, run_eda_medications, run_eda_heart_failure, run_eda_observations, describe_complete_case_cohort_for_injection_calibration, analyze_covariate_correlations
 from .preprocess_data import build_t2dm_cohort, build_metformin_cohort, build_no_prior_hf_cohort, build_baseline_covariates, build_complete_case_cohort
 from .injection import build_treatment_assignment, build_hf_outcome
 from .analysis import run_propensity_analysis
@@ -37,6 +37,9 @@ def main():
 
     log_separator("EDA: Complete-case cohort descriptive stats")
     describe_complete_case_cohort_for_injection_calibration()
+
+    log_separator("EDA: Covariate correlation structure")
+    analyze_covariate_correlations()
 
     log_separator("Preprocessing: building complete-case cohort")
     build_complete_case_cohort()

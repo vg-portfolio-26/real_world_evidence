@@ -15,6 +15,7 @@ from .config import (
     NO_PRIOR_HF_METFORMIN_COHORT_OUTPUT_PATH,
     PLAUSIBLE_RANGES,
     COVARIATE_OBSERVATION_CODES,
+    COVARIATE_CORRELATIONS_OUTPUT_PATH,
     EXPLORATORY_DIABETES_PATTERN,
     BASE_DX_DESCRIPTION,
     COMPLICATION_PATTERN,
@@ -508,3 +509,46 @@ def describe_complete_case_cohort_for_injection_calibration():
             f"min={stats['min']:.1f}, 25%={stats['25%']:.1f}, median={stats['50%']:.1f}, "
             f"75%={stats['75%']:.1f}, max={stats['max']:.1f}"
         )
+
+
+def analyze_covariate_correlations() -> None:
+    """ Pairwise Pearson correlation across the 6 baseline covariates plus age, on the complete-case cohort """
+    logging.info(f"Loading baseline covariates from {BASELINE_COVARIATES_OUTPUT_PATH} ...")
+    covariates = pd.read_csv(BASELINE_COVARIATES_OUTPUT_PATH, parse_dates=["metformin_start_date"])
+    if pd.api.types.is_datetime64tz_dtype(covariates["metformin_start_date"]):
+        covariates["metformin_start_date"] = covariates["metformin_start_date"].dt.tz_localize(None)
+
+    logging.info(f"Loading patients from {PATIENTS_PATH} ...")
+    patients = pd.read_csv(PATIENTS_PATH, usecols=["Id", "BIRTHDATE"], parse_dates=["BIRTHDATE"])
+    patients = patients.rename(columns={"Id": "patient_id"})
+    if pd.api.types.is_datetime64tz_dtype(patients["BIRTHDATE"]):
+        patients["BIRTHDATE"] = patients["BIRTHDATE"].dt.tz_localize(None)
+
+    merged = covariates.merge(patients, on="patient_id", how="left")
+    merged["age"] = (merged["metformin_start_date"] - merged["BIRTHDATE"]).dt.days / 365.25
+
+    covariate_columns = list(COVARIATE_OBSERVATION_CODES.values())
+    columns = ["age"] + covariate_columns
+    complete_case = merged.dropna(subset=covariate_columns)
+    logging.info(f"  Computing pairwise Pearson correlations on {len(complete_case):,} complete-case patients")
+
+    correlation_matrix = complete_case[columns].corr(method="pearson")
+
+    COVARIATE_CORRELATIONS_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    correlation_matrix.to_csv(COVARIATE_CORRELATIONS_OUTPUT_PATH)
+    logging.info(f"Saved: {COVARIATE_CORRELATIONS_OUTPUT_PATH}")
+
+    log_separator()
+    logging.info("Pairwise Pearson correlations, sorted by |r| descending:")
+    seen = set()
+    rows = []
+    for row_col in columns:
+        for col_col in columns:
+            if row_col == col_col or (col_col, row_col) in seen:
+                continue
+            seen.add((row_col, col_col))
+            rows.append((row_col, col_col, correlation_matrix.loc[row_col, col_col]))
+
+    rows.sort(key=lambda item: abs(item[2]), reverse=True)
+    for col_a, col_b, r in rows:
+        logging.info(f"  {col_a} -- {col_b}: r={r:.3f}")

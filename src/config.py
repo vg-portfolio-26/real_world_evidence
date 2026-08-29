@@ -42,6 +42,8 @@ BASELINE_COVARIATES_OUTPUT_PATH = PREPROCESSED_DATA_DIR / "baseline_covariates.c
 
 COMPLETE_CASE_COHORT_PATH = PREPROCESSED_DATA_DIR / "complete_case_cohort.csv"
 
+COVARIATE_CORRELATIONS_OUTPUT_PATH = PREPROCESSED_DATA_DIR / "covariate_correlations.csv"
+
 # ---------------------------------------------------------------------------
 # Injection outputs
 # ---------------------------------------------------------------------------
@@ -163,7 +165,7 @@ HF_INCLUSION_CODES = {
 #      a timing artifact of Synthea's simulated encounter ordering, not missing data
 #   4. eGFR and creatinine have long, implausible tails even within their single canonical variant.
 #      Values outside the chosen plausible ranges are set to MISSING (NaN).
-#   5. eGFR has 655 implausible  records tightly clustered at 1.0-1.9, and all 655
+#   5. eGFR has 654 implausible  records tightly clustered at 1.0-1.9, and all 654
 #      would fall within the plausible range if multiplied by 100.
 #      Confirmed via LOINC/FHIR documentation that CODE 33914-3 has no
 #      legitimate alternate scale/unit convention (defined as mL/min/1.73m2).
@@ -317,7 +319,7 @@ NEGATIVE_CONTROL_TRUE_LOG_HR = 0.0  # falsification test: no true treatment effe
 # Leave empty for the default, correctly-specified analysis.
 # ---------------------------------------------------------------------------
 
-PROPENSITY_MODEL_EXCLUDED_COVARIATES = ["age"]
+PROPENSITY_MODEL_EXCLUDED_COVARIATES = []
 
 # ---------------------------------------------------------------------------
 # Monte Carlo validation (src/monte_carlo.py)
