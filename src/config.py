@@ -151,7 +151,7 @@ HF_INCLUSION_CODES = {
 # ---------------------------------------------------------------------------
 # Baseline covariates
 # EDA demonstrated that:
-#   1. BMI, HbA1c, systolic BP, and diastolic BP each map 1:1 to a single
+#   1. BMI, HbA1c, and systolic BP each map 1:1 to a single
 #      CODE/DESCRIPTION/UNITS combination - full coverage across all
 #      3,964 cohort patients, no issues.
 #   2. eGFR (CODE 33914-3) and creatinine (CODE 38483-4) each have
@@ -178,7 +178,6 @@ COVARIATE_OBSERVATION_CODES = {
     "39156-5": "bmi",
     "4548-4": "hba1c",
     "8480-6": "systolic_bp",
-    "8462-4": "diastolic_bp",
     "33914-3": "egfr",
     "38483-4": "creatinine",
 }
@@ -198,7 +197,6 @@ PLAUSIBLE_RANGES = {
     "bmi": (10, 80),
     "hba1c": (3, 20),
     "systolic_bp": (60, 250),
-    "diastolic_bp": (30, 150),
     "egfr": (2, 200),
     "creatinine": (0.1, 15),
 }
@@ -238,7 +236,7 @@ ANTIDIABETIC_PATTERN = (
 
 BASELINE_COVARIATE_PATTERN = (
     "body mass index|bmi|glomerular filtration|egfr|creatinine|"
-    "blood pressure|systolic|diastolic|hemoglobin a1c|hba1c"
+    "blood pressure|systolic|hemoglobin a1c|hba1c"
 )
 
 # ---------------------------------------------------------------------------
@@ -258,7 +256,7 @@ BASELINE_COVARIATE_PATTERN = (
 # at the cohort's mean covariate values (calibrated empirically once the model is run).
 # ---------------------------------------------------------------------------
 
-RANDOM_SEED = 42
+RANDOM_SEED = 1
 
 ASSIGNMENT_COEFFICIENTS = {
     "age": -0.35,
@@ -325,7 +323,7 @@ PROPENSITY_MODEL_EXCLUDED_COVARIATES = []
 # Monte Carlo validation (src/monte_carlo.py)
 # ---------------------------------------------------------------------------
 
-N_SEEDS = 50
+N_SEEDS = 500
 BASE_SEED = 1000
 
 PATHOLOGICAL_HR_BOUNDS = (0.05, 5.0)  # flags a seed's doubly-robust HR as implausible outside this range

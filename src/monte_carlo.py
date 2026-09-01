@@ -97,6 +97,7 @@ def summarize_monte_carlo_results(results: pd.DataFrame) -> None:
 def plot_hr_distribution(results: pd.DataFrame) -> None:
     """ Plots the distribution of HR estimates across seeds for each estimator against the true HR """
     true_hr = injection.TRUE_SGLT2I_HAZARD_RATIO
+    display_range = (0, 3)
 
     fig, ax = plt.subplots(figsize=(7, 5))
     for prefix, label, color in [
@@ -104,12 +105,15 @@ def plot_hr_distribution(results: pd.DataFrame) -> None:
         ("iptw", "IPTW-weighted", "tab:blue"),
         ("dr", "Doubly-robust", "tab:green"),
     ]:
-        ax.hist(results[f"{prefix}_hr"], bins=15, alpha=0.5, label=label, color=color)
+        values = results[f"{prefix}_hr"]
+        n_off_scale = ((values < display_range[0]) | (values > display_range[1])).sum()
+        label_with_note = f"{label} ({n_off_scale} off-scale, not shown)" if n_off_scale > 0 else label
+        ax.hist(values, bins=40, range=display_range, alpha=0.5, label=label_with_note, color=color)
 
     ax.axvline(true_hr, color="black", linestyle="--", linewidth=1.2, label=f"True HR = {true_hr:.2f}")
     ax.set_xlabel("Estimated Hazard Ratio (SGLT2i vs. DPP-4i)")
     ax.set_ylabel("Count across seeds")
-    ax.set_title(f"Distribution of HR Estimates Across {len(results)} Monte Carlo Seeds")
+    ax.set_xlim(display_range)
     ax.legend()
     fig.tight_layout()
 
@@ -163,7 +167,7 @@ def investigate_pathological_seed(cohort: pd.DataFrame, seed: int) -> None:
     if separated_covariates:
         logging.warning(f"  Quasi-separation among event cases for: {separated_covariates}")
     else:
-        logging.info("  No quasi-separation among event cases for any covariate.")
+        logging.info("  No quasi-separation among event cases for any covariate")
 
     # Doubly-robust coefficient stability check
     cox_data = data[["hf_event_days", "hf_event_occurred", "treatment"]].copy()
@@ -186,7 +190,7 @@ def investigate_pathological_seed(cohort: pd.DataFrame, seed: int) -> None:
     if unstable:
         logging.warning(f"  Unstable DR coefficients (SE > 2): {unstable}")
     else:
-        logging.info("  All DR coefficient SEs within normal range.")
+        logging.info("  All DR coefficient SEs within normal range")
 
 
 def run_pathological_seed_diagnostics(cohort: pd.DataFrame, results: pd.DataFrame) -> None:
@@ -211,7 +215,6 @@ def plot_mean_love_plot(all_smds: list) -> None:
         mean_unadjusted,
         mean_weighted,
         output_path=MONTE_CARLO_LOVE_PLOT_PATH,
-        title=f"Covariate Balance Before/After IPTW (mean across {len(all_smds)} seeds)",
     )
 
 

@@ -58,7 +58,7 @@ def load_analysis_dataset() -> pd.DataFrame:
 
 
 def estimate_propensity_scores(data: pd.DataFrame) -> pd.Series:
-    """ Logistic regression predicting P(SGLT2i) from PROPENSITY_MODEL_COVARIATES - by default the same 6 covariates used in the true assignment mechanism in src/injection.py, unless PROPENSITY_MODEL_EXCLUDED_COVARIATES is set for a misspecification sensitivity analysis """
+    """ Logistic regression predicting P(SGLT2i) from PROPENSITY_MODEL_COVARIATES """
     logging.info(f"Estimating propensity scores (logistic regression on {len(PROPENSITY_MODEL_COVARIATES)} baseline covariates: {PROPENSITY_MODEL_COVARIATES}) ...")
     if PROPENSITY_MODEL_EXCLUDED_COVARIATES:
         logging.info(f"  NOTE: propensity model deliberately excludes {PROPENSITY_MODEL_EXCLUDED_COVARIATES} (misspecification sensitivity analysis)")
@@ -173,9 +173,12 @@ def fit_doubly_robust_cox_model(data: pd.DataFrame, weights: pd.Series) -> dict:
     return {"model": "Doubly-robust", "hr": adjusted_hr, "ci_low": ci_low, "ci_high": ci_high}
 
 
-def build_results_table(naive_result: dict, iptw_result: dict, dr_result: dict) -> pd.DataFrame:
-    """ Assembles the naive / IPTW / doubly-robust comparison table """
-    rows = [naive_result, iptw_result, dr_result]
+def build_results_table(naive_result: dict, iptw_result: dict, dr_result: dict | None) -> pd.DataFrame:
+    """ Assembles the naive / IPTW / doubly-robust comparison table; dr_result is None if the doubly-robust fit failed to converge """
+    rows = [naive_result, iptw_result]
+    if dr_result is not None:
+        rows.append(dr_result)
+    
     table = pd.DataFrame(rows)
     table["true_hr"] = TRUE_SGLT2I_HAZARD_RATIO
     table["contains_truth"] = (table["ci_low"] <= TRUE_SGLT2I_HAZARD_RATIO) & (TRUE_SGLT2I_HAZARD_RATIO <= table["ci_high"])
@@ -192,7 +195,7 @@ def build_results_table(naive_result: dict, iptw_result: dict, dr_result: dict) 
     return table
 
 
-def plot_love_plot(unadjusted_smds: dict, weighted_smds: dict, output_path=None, title: str = "Covariate Balance Before/After IPTW") -> None:
+def plot_love_plot(unadjusted_smds: dict, weighted_smds: dict, output_path=None) -> None:
     """ SMD per covariate, before (unadjusted) vs. after (IPTW-weighted) """
     if output_path is None:
         output_path = LOVE_PLOT_OUTPUT_PATH
@@ -214,7 +217,6 @@ def plot_love_plot(unadjusted_smds: dict, weighted_smds: dict, output_path=None,
     ax.set_yticks(y_positions)
     ax.set_yticklabels(covariates)
     ax.set_xlabel("Standardized Mean Difference (SGLT2i vs. DPP-4i)")
-    ax.set_title(title)
     ax.legend()
     fig.tight_layout()
  
@@ -234,7 +236,6 @@ def plot_km_curves(data: pd.DataFrame) -> None:
 
     ax.set_xlabel("Days since metformin start")
     ax.set_ylabel("HF-hospitalization-free survival probability")
-    ax.set_title("Kaplan-Meier Curves by Treatment Arm (unadjusted)")
     fig.tight_layout()
 
     fig.savefig(KM_CURVES_OUTPUT_PATH, dpi=150)
@@ -305,7 +306,8 @@ def run_negative_control_check(data: pd.DataFrame, weights: pd.Series) -> pd.Dat
     logging.info(f"Saved: {NEGATIVE_CONTROL_OUTPUT_PATH}")
 
     if not table.loc[table["model"] == "IPTW-weighted", "contains_null"].iloc[0]:
-        logging.info("  NOTE: adjusted negative control CI excludes 1.0 - suggests residual confounding the propensity model isn't fully capturing.")
+        logging.info("  NOTE: adjusted negative control CI excludes 1.0 - suggests residual confounding the propensity model isn't fully capturing")
+    
     return table
 
 
@@ -358,7 +360,15 @@ def run_propensity_analysis():
 
     naive_result = check_naive_treatment_effect(data[["hf_event_days", "hf_event_occurred", "treatment"]])
     iptw_result = fit_weighted_cox_model(data, weights)
-    dr_result = fit_doubly_robust_cox_model(data, weights)
+    
+    try:
+        dr_result = fit_doubly_robust_cox_model(data, weights)
+    except Exception as e:
+        logging.warning(
+            f"  Doubly-robust Cox model failed to converge: ps_min={propensity_scores.min():.4f}, "
+            f"ps_max={propensity_scores.max():.4f}, weight_max={weights.max():.2f}: {type(e).__name__}: {e}"
+        )
+        dr_result = None
 
     build_results_table(naive_result, iptw_result, dr_result)
     plot_love_plot(unadjusted_smds, weighted_smds)

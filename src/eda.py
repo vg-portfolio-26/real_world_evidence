@@ -52,11 +52,7 @@ def load_observations_for_patients(path: Path, patient_ids: set, chunksize: int 
 
 
 def explore_diabetes_related_descriptions(conditions: pd.DataFrame) -> None:
-    """
-    Log every unique DESCRIPTION containing 'diabetes' (case-insensitive),
-    with counts, sorted descending. This is the broad grep that revealed
-    the base-diagnosis wording mismatch and the ambiguous/ excluded categories
-    """
+    """ Log every unique DESCRIPTION containing 'diabetes' (case-insensitive) """
     mask = conditions["DESCRIPTION"].str.contains(
         EXPLORATORY_DIABETES_PATTERN, case=False, na=False
     )

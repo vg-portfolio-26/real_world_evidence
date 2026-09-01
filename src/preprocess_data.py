@@ -277,10 +277,10 @@ def extract_baseline_covariates(observations: pd.DataFrame, cohort: pd.DataFrame
     ).dt.total_seconds() / 86400
     baseline_eligible["abs_days_from_index"] = baseline_eligible["days_from_index"].abs()
  
-    baseline_eligible = baseline_eligible.sort_values("abs_days_from_index")
+    min_abs_days = baseline_eligible.groupby(["patient_id", "CODE"])["abs_days_from_index"].transform("min")
     closest_per_patient_code = (
-        baseline_eligible.groupby(["patient_id", "CODE"], as_index=False)
-        .first()[["patient_id", "CODE", "VALUE"]]
+        baseline_eligible.loc[baseline_eligible["abs_days_from_index"] == min_abs_days]
+        .groupby(["patient_id", "CODE"], as_index=False)["VALUE"].mean()
     )
  
     # Pivot to one row per patient, one column per covariate
